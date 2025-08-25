@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>BAL YEM 31 — Online</title>
+<style>
+  :root{
+    --bg:#1e2a33; --panel:#223240; --ok:#27ae60; --warn:#f1c40f; --danger:#e74c3c; --info:#2d6cdf;
+    --text:#f7f8fa; --muted:#c9d1d9; --card:#ffffff; --border:#e74c3c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--text)}
+  .wrap{max-width:720px;margin:0 auto;padding:16px}
+  .panel{background:var(--panel);border-radius:14px;padding:16px;box-shadow:0 10px 28px rgba(0,0,0,.25)}
+  h1{margin:8px 0 16px;font-size:clamp(22px,5vw,28px)}
+  input{width:100%;padding:12px;border:none;border-radius:10px;background:#16232c;color:var(--text);margin-bottom:10px}
+  button{padding:12px;border:none;border-radius:10px;font-weight:700;cursor:pointer}
+  .full{width:100%}
+  .primary{background:#2d6cdf;color:#fff} .danger{background:#e74c3c;color:#fff}
+  .ghost{background:#32485a;color:#fff} .success{background:#27ae60;color:#111}
+  .muted{color:var(--muted);font-size:13px;margin-top:8px}
+  .split{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+
+  /* Splash */
+  #splash{
+    position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    background:#1e2a33; color:#fff; font-weight:900; letter-spacing:2px;
+    font-size:clamp(28px,8vw,48px); z-index:9999;
+  }
+
+  /* Players list */
+  .players{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+  .chip{background:#16232c;border-radius:999px;padding:6px 10px;font-size:13px;display:flex;align-items:center;gap:8px}
+  .chip.me{outline:2px solid var(--ok)}
+  .chip.dead{opacity:.45;text-decoration:line-through}
+  .order{background:#101820;border-radius:6px;padding:2px 6px;font-size:11px;opacity:.9}
+  .dot{width:10px;height:10px;border-radius:50%}
+  .dot.ready{background:var(--ok)} .dot.wait{background:var(--warn)}
+
+  /* Tags */
+  .tag{display:inline-block;padding:6px 10px;border-radius:999px;background:#16232c;font-size:12px}
+  .tag.started{background:var(--info)}
+  .tag.turn{background:#ffb703;color:#111;font-weight:800}
+  .tag.you{background:#27ae60;color:#111;font-weight:800}
+
+  /* Grid 1–31 */
+  .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:12px}
+  .card{
+    position:relative;aspect-ratio:2/2.6;background:var(--card);color:var(--danger);
+    border:3px solid var(--border);border-radius:14px;display:flex;align-items:center;justify-content:center;
+    font-size:clamp(22px,6vw,36px);font-weight:800;user-select:none;cursor:pointer;transition:.12s transform,.12s filter;
+    box-shadow:0 10px 24px rgba(0,0,0,.25)
+  }
+  .card:active{transform:scale(.97)}
+  .card.taken{background:#fff4f4;color:#fff;border-color:var(--danger)}
+  .card.taken::after{content:"SEÇİLDİ"; position:absolute; right:6px; bottom:6px; background:var(--danger); color:#fff;
+    font-size:10px; font-weight:800; padding:3px 6px; border-radius:6px}
+  .card.me{outline:3px solid var(--ok)}
+  .card.disabled{opacity:.45; cursor:not-allowed}
+
+  /* Countdown bubble */
+  .countdown{font-weight:900;font-size:18px;padding:6px 10px;border-radius:10px;background:#101820;margin-left:8px}
+
+  /* End banner */
+  .end-banner{
+    position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+    background: #e74c3c; color:#fff; font-weight:800; font-size:16px;
+    padding:10px 14px; border-radius:12px; box-shadow:0 10px 28px rgba(0,0,0,.25);
+    z-index: 9998; opacity:0; pointer-events:none; transition: opacity .25s ease, transform .25s ease;
+  }
+  .end-banner.show{ display:block !important; opacity:1; transform: translateX(-50%) translateY(0); }
+
+  /* Modal (secret) */
+  .modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.4);backdrop-filter: blur(2px);padding:16px;z-index:9997}
+  .modal .box{width:100%;max-width:420px;background:var(--panel);border-radius:14px;padding:16px;box-shadow:0 10px 28px rgba(0,0,0,.35)}
+  .secret-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:10px 0}
+  .secret-grid button{padding:10px;border:none;border-radius:10px;font-weight:800;background:#fff;color:#e74c3c;border:2px solid #e74c3c;cursor:pointer}
+  .secret-grid button.sel{background:#27ae60;color:#111;border-color:#27ae60}
+</style>
+</head>
+<body>
+  <!-- Splash -->
+  <div id="splash">BAL YEM 31</div>
+
+  <div class="wrap">
+    <!-- Login -->
+    <section id="login" class="panel" style="display:none">
+      <h1>31 Oyununa Hoş Geldin</h1>
+      <input id="nameInput" placeholder="Kullanıcı adını yaz (ör: İbrahim)"/>
+      <button id="joinBtn" class="primary full">GİR</button>
+      <div class="muted">WhatsApp linkine <code>?room=oda-whatsapp</code> ekle; tıklayan herkes aynı odaya düşer. Oda limiti: 10.</div>
+    </section>
+
+    <!-- Game -->
+    <section id="game" class="panel" style="display:none">
+      <div class="split">
+        <h1 id="roomTitle">Oda: -</h1>
+        <div>
+          <span id="stateTag" class="tag">Bekleme</span>
+          <span id="turnTag" class="tag" style="display:none"></span>
+          <span id="aliveTag" class="tag">Canlı: 0</span>
+          <span id="countdownBubble" class="countdown" style="display:none">1</span>
+        </div>
+      </div>
+
+      <div class="players" id="players"></div>
+
+      <div id="grid" class="grid"></div>
+
+      <div class="row" style="margin-top:12px">
+        <button id="readyBtn" class="success">Hazırım</button>
+        <button id="unreadyBtn" class="ghost" style="display:none">Hazır Değilim</button>
+        <button id="cheatBtn" class="ghost" title="Şifre gir">Şifre</button>
+        <button id="leaveBtn" class="danger">Odadan Çık</button>
+      </div>
+      <div id="cheatBox" style="display:none; margin-top:8px; padding:8px; background:#16232c; border-radius:8px; font-size:14px"></div>
+
+      <div class="muted" style="margin-top:8px">
+        Akış: İsim → <b>Gizli sayı</b> → <b>Hazırım</b> → (1–3) → Başlar → Sıra ile → Süre dolarsa otomatik seçim → Elenme → Son kalan için mesaj → Otomatik yeni tur.
+      </div>
+    </section>
+  </div>
+
+  <!-- End banner -->
+  <div id="endBanner" class="end-banner" style="display:none"></div>
+
+  <!-- Secret modal -->
+  <div id="secretModal" class="modal" aria-hidden="true">
+    <div class="box">
+      <h3 style="margin:0 0 10px">Gizli sayını seç (1–31)</h3>
+      <div id="secretGrid" class="secret-grid"></div>
+      <button id="saveSecretBtn" class="primary full" disabled>Kaydet</button>
+      <div class="muted">Sadece sen ve sistem görür. Biri bu sayıya basarsa <b>elenirsin</b>.</div>
+    </div>
+  </div>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <script>
+    // 0) Firebase config — senin verdiğin
+    const firebaseConfig = {
+      apiKey: "AIzaSyAVGICVQBgLtK7TAHs52jtTr_dXQYFcP0I",
+      authDomain: "oyunu-82e8f.firebaseapp.com",
+      databaseURL: "https://oyunu-82e8f-default-rtdb.firebaseio.com",
+      projectId: "oyunu-82e8f",
+      storageBucket: "oyunu-82e8f.firebasestorage.app",
+      messagingSenderId: "655562203367",
+      appId: "1:655562203367:web:0a932030f64610dd474242"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    /* ==== Sunucu zamanı offset ==== */
+    let serverOffset = 0;
+    db.ref(".info/serverTimeOffset").on('value', s => { serverOffset = s.val() || 0; });
+    const serverNow = ()=> Date.now() + serverOffset;
+
+    /* ==== Oda ve DOM ==== */
+    const params = new URLSearchParams(location.search);
+    const roomId = params.get("room") || "oda-whatsapp";
+
+    const splash = document.getElementById('splash');
+    const login  = document.getElementById('login');
+    const game   = document.getElementById('game');
+    const nameInput = document.getElementById("nameInput");
+    const joinBtn   = document.getElementById("joinBtn");
+    const roomTitle = document.getElementById("roomTitle");
+    const stateTag  = document.getElementById("stateTag");
+    const turnTag   = document.getElementById("turnTag");
+    const aliveTag  = document.getElementById("aliveTag");
+    const countdownBubble = document.getElementById("countdownBubble");
+    const playersEl = document.getElementById("players");
+    const gridEl    = document.getElementById("grid");
+    const readyBtn  = document.getElementById("readyBtn");
+    const unreadyBtn= document.getElementById("unreadyBtn");
+    const cheatBtn  = document.getElementById("cheatBtn");
+    const cheatBox  = document.getElementById("cheatBox");
+    const endBanner = document.getElementById("endBanner");
+    const leaveBtn  = document.getElementById("leaveBtn");
+
+    const secretModal = document.getElementById("secretModal");
+    const secretGrid  = document.getElementById("secretGrid");
+    const saveSecretBtn = document.getElementById("saveSecretBtn");
+
+    /* ==== Local state ==== */
+    const playerId = "p_" + Math.random().toString(36).slice(2,10);
+    let playerName = null, started=false, myTurn=false, myAlive=true, mySecret=null, elimCount=0;
+    const BASE_SEC = 10, EXTRA_PER_ELIM = 5;
+    let availableNums = [];
+    let currentDeadlineAt = 0;
+
+    /* ==== Splash → 5 sn sonra login ==== */
+    window.addEventListener("DOMContentLoaded", ()=>{
+      setTimeout(()=>{ splash.style.display="none"; login.style.display="block"; }, 5000);
+    });
+
+    /* ==== 1–31 grid ==== */
+    const cards = new Map();
+    for (let i=1;i<=31;i++){
+      const b=document.createElement("button");
+      b.className="card disabled"; b.textContent=i; b.dataset.num=i; b.disabled=true;
+      b.onclick=()=>onPickRequest(i);
+      gridEl.appendChild(b); cards.set(i,b);
+    }
+
+    /* ==== Secret modal grid ==== */
+    let tempSecret=null;
+    for (let i=1;i<=31;i++){
+      const btn=document.createElement('button'); btn.textContent=i;
+      btn.onclick=()=>{ tempSecret=i; [...secretGrid.children].forEach(b=>b.classList.remove('sel')); btn.classList.add('sel'); saveSecretBtn.disabled=false; };
+      secretGrid.appendChild(btn);
+    }
+    function openSecretModal(){ secretModal.style.display='flex'; }
+    function closeSecretModal(){ secretModal.style.display='none'; }
+    saveSecretBtn.onclick=async ()=>{
+      if (!tempSecret) return;
+      mySecret=tempSecret;
+      await db.ref(`rooms/${roomId}/secrets/${playerId}`).set(mySecret);
+      await db.ref(`rooms/${roomId}/players/${playerId}/ready`).set(false);
+      closeSecretModal();
+      alert("Gizli sayı kaydedildi. Hazır'a basabilirsin.");
+    };
+
+    /* ==== Giriş ==== */
+    joinBtn.onclick=async ()=>{
+      playerName=(nameInput.value||"").trim();
+      if(!playerName){ alert("Adını yaz!"); return; }
+      const pSnap=await db.ref(`rooms/${roomId}/players`).get();
+      const pCount=Object.keys(pSnap.val()||{}).length;
+      if (pCount>=10){ alert("Oda dolu (10/10)."); return; }
+
+      const pRef=db.ref(`rooms/${roomId}/players/${playerId}`);
+      await pRef.set({name:playerName,ready:false,alive:true,joinedAt:firebase.database.ServerValue.TIMESTAMP});
+      pRef.onDisconnect().remove(); // sekme kapanırsa otomatik sil
+
+      login.style.display='none'; game.style.display='block'; roomTitle.textContent="Oda: "+roomId;
+
+      subscribePlayers(); subscribeNumbers(); subscribeRoomState();
+      openSecretModal();
+    };
+
+    leaveBtn.onclick=async ()=>{
+      await db.ref(`rooms/${roomId}/players/${playerId}`).remove();
+      location.href = location.pathname;
+    };
+
+    /* ==== Oyuncular listesi ==== */
+    function subscribePlayers(){
+      db.ref(`rooms/${roomId}/players`).on('value', snap=>{
+        playersEl.innerHTML=''; const data=snap.val()||{};
+        const list=Object.entries(data).sort((a,b)=>(a[1].joinedAt||0)-(b[1].joinedAt||0));
+        let aliveCount=0;
+        list.forEach(([pid,info],idx)=>{
+          const chip=document.createElement('div');
+          chip.className='chip'+(pid===playerId?' me':'')+(info.alive===false?' dead':'');
+          const ord=document.createElement('span'); ord.className='order'; ord.textContent=idx+1;
+          const dot=document.createElement('span'); dot.className='dot '+(info.ready?'ready':'wait');
+          const txt=document.createElement('span'); txt.textContent=info.name||'Oyuncu';
+          chip.appendChild(ord); chip.appendChild(dot); chip.appendChild(txt); playersEl.appendChild(chip);
+          if (info.alive!==false) aliveCount++; if (pid===playerId) myAlive=(info.alive!==false);
+        });
+        aliveTag.textContent='Canlı: '+aliveCount;
+      });
+    }
+
+    /* ==== Sayılar ==== */
+    let prevTaken=new Set();
+    function subscribeNumbers(){
+      db.ref(`rooms/${roomId}/numbers`).on("value", snap=>{
+        const data=snap.val()||{}; const newTaken=new Set(Object.keys(data).map(Number));
+        availableNums=[];
+        for (let i=1;i<=31;i++){
+          const btn=cards.get(i); btn.className="card"; btn.disabled=false;
+          if (!newTaken.has(i)) availableNums.push(i);
+        }
+        newTaken.forEach(n=>{
+          const btn=cards.get(n); if(btn){ btn.classList.add('taken'); btn.disabled=true; if (data[n].pickerId===playerId) btn.classList.add('me'); }
+        });
+        prevTaken=newTaken;
+      });
+    }
+
+    /* ==== Hazır/Değil ==== */
+    readyBtn.onclick=async ()=>{
+      if (mySecret==null){ openSecretModal(); alert('Önce gizli sayını seç.'); return; }
+      await db.ref(`rooms/${roomId}/players/${playerId}/ready`).set(true);
+      readyBtn.style.display='none'; unreadyBtn.style.display='inline-block';
+    };
+    unreadyBtn.onclick=async ()=>{
+      await db.ref(`rooms/${roomId}/players/${playerId}/ready`).set(false);
+      readyBtn.style.display='inline-block'; unreadyBtn.style.display='none';
+    };
+
+    /* ==== Şifre (200) – sadece girene görünür ==== */
+    cheatBtn.onclick=async ()=>{
+      const pass=prompt("Şifreyi gir:");
+      if (pass==="200"){
+        const [pS,sS]=await Promise.all([
+          db.ref(`rooms/${roomId}/players`).get(),
+          db.ref(`rooms/${roomId}/secrets`).get()
+        ]);
+        const players=pS.val()||{}, secrets=sS.val()||{};
+        cheatBox.innerHTML="<b>Gizli Sayılar:</b><br>";
+        Object.entries(players).forEach(([pid,info])=>{
+          const num=secrets[pid]; if(num!=null) cheatBox.innerHTML+=`${info.name}: ${num}<br>`;
+        });
+        cheatBox.style.display="block";
+      } else alert("Yanlış şifre!");
+    };
+
+    /* ==== Oda durumu & oyun akışı ==== */
+    function subscribeRoomState(){
+      db.ref(`rooms/${roomId}/state`).on('value', snap=>{
+        const st=snap.val()||{started:false,finished:false};
+        started=!!st.started; elimCount=st.elimCount||0;
+        cheatBtn.style.display=started?'none':'inline-block';
+
+        // Bitiş
+        if (st.finished){
+          const name=st.loserName||'—';
+          endBanner.textContent=`Kesene bereket cenabet, ${name}!`; endBanner.classList.add('show');
+          stateTag.textContent='Bitti'; turnTag.style.display='inline-block'; turnTag.textContent=`Kesene bereket cenabet, ${name}!`;
+          setTimeout(()=>{ endBanner.classList.remove('show'); prepareNextRound(); }, 3500);
+          for (let i=1;i<=31;i++){ const btn=cards.get(i); btn.disabled=true; btn.classList.add('disabled'); }
+          countdownBubble.style.display='none'; return;
+        }
+
+        // Yeni tur: gizli sayı seçimi
+        if (st.phase==='choosing'){
+          stateTag.textContent='Yeni Tur: Gizli sayı seçin'; turnTag.style.display='none'; countdownBubble.style.display='none';
+          for (let i=1;i<=31;i++){ const btn=cards.get(i); btn.disabled=true; btn.classList.add('disabled'); }
+          if (mySecret==null) openSecretModal();
+          readyBtn.style.display='inline-block'; unreadyBtn.style.display='none';
+          started=false; myTurn=false; currentDeadlineAt=0; return;
+        }
+
+        // Geri sayım 1→3
+        if (st.phase==='countdown' && !st.started){
+          stateTag.textContent='Başlıyor';
+          const t0=st.countdownAt||0; const elapsed=Math.max(0, serverNow()-t0);
+          const step=Math.min(3, Math.floor(elapsed/1000)+1);
+          countdownBubble.style.display='inline-block'; countdownBubble.textContent=String(step);
+          if (elapsed>=3000) finalizeStartIfNeeded();
+          for (let i=1;i<=31;i++){ const btn=cards.get(i); btn.disabled=true; btn.classList.add('disabled'); }
+          return;
+        } else { countdownBubble.style.display='none'; }
+
+        // Bekleme
+        if (!started){
+          stateTag.textContent='Bekleme'; turnTag.style.display='none';
+          for (let i=1;i<=31;i++){ const btn=cards.get(i); btn.disabled=true; btn.classList.add('disabled'); }
+          currentDeadlineAt=0; return;
+        }
+
+        // Başladı
+        stateTag.textContent='Başladı'; stateTag.classList.add('started');
+        const order=st.turn?.order||[], idx=st.turn?.idx||0, currentId=order[idx], currentName=st.turn?.currentName||'—';
+        myTurn=(currentId===playerId);
+        turnTag.style.display='inline-block';
+        turnTag.textContent=myTurn?'Sıra Sende':`Sıradaki: ${currentName}`;
+        turnTag.classList.toggle('you',myTurn); turnTag.classList.toggle('turn',!myTurn);
+
+        for (let i=1;i<=31;i++){
+          const btn=cards.get(i), taken=btn.classList.contains('taken');
+          btn.disabled=!myTurn||taken; btn.classList.toggle('disabled',btn.disabled);
+        }
+
+        const dl=Number(st.turn?.deadlineAt||0); currentDeadlineAt=dl;
+        if (dl){
+          const remain=Math.max(0, dl - serverNow()); const sec=Math.ceil(remain/1000);
+          countdownBubble.style.display='inline-block'; countdownBubble.textContent=String(sec);
+          if (remain<=0 && myTurn) autoPickRandom();
+        } else countdownBubble.style.display='none';
+      });
+    }
+
+    // Ekranda geri sayım tık tık güncellensin
+    setInterval(()=>{
+      if (!started || !currentDeadlineAt) return;
+      const remain=currentDeadlineAt - serverNow();
+      const sec=Math.ceil(Math.max(0,remain)/1000);
+      countdownBubble.style.display='inline-block'; countdownBubble.textContent=String(sec);
+      if (remain<=0 && myTurn) autoPickRandom();
+    }, 300);
+
+    /* ==== Herkes hazır → COUNTDOWN ==== */
+    async function maybeAutoStart(){
+      const [pS,sS,stS]=await Promise.all([
+        db.ref(`rooms/${roomId}/players`).get(),
+        db.ref(`rooms/${roomId}/secrets`).get(),
+        db.ref(`rooms/${roomId}/state`).get()
+      ]);
+      const players=pS.val()||{}, secrets=sS.val()||{}, st=stS.val()||{};
+      if (st.started||st.finished||st.phase==='countdown') return;
+      const ids=Object.keys(players); if(ids.length<2) return;
+      const allReady=ids.every(id=>players[id].ready===true);
+      const allSecret=ids.every(id=>!!secrets[id]);
+      if (!allReady||!allSecret) return;
+      await db.ref(`rooms/${roomId}/state`).transaction(curr=>{
+        if (curr && (curr.started||curr.finished||curr.phase==='countdown')) return;
+        return {started:false,finished:false,elimCount:curr?.elimCount||0,phase:'countdown',countdownAt:{".sv":"timestamp"}};
+      });
+    }
+    db.ref(`rooms/${roomId}/players`).on('value', ()=>maybeAutoStart());
+    db.ref(`rooms/${roomId}/secrets`).on('value', ()=>maybeAutoStart());
+
+    /* ==== COUNTDOWN → START ==== */
+    async function finalizeStartIfNeeded(){
+      const roomRef=db.ref(`rooms/${roomId}`);
+      let committed=false;
+      await roomRef.transaction(room=>{
+        if(!room) return room; const st=room.state||{};
+        if (st.started||st.finished||st.phase!=='countdown') return room;
+        const players=room.players||{};
+        const ordered=Object.entries(players).filter(([_,p])=>p.alive!==false)
+          .sort((a,b)=>(a[1].joinedAt||0)-(b[1].joinedAt||0)).map(([pid,_])=>pid);
+        if (ordered.length<2) return room;
+        const firstId=ordered[0];
+        st.started=true; st.phase=null;
+        st.turn={order:ordered,idx:0,currentName:players[firstId]?.name||''};
+        room.state=st; return room;
+      }, (e,ok)=>{committed=ok;});
+      if (committed){
+        const s1=(await db.ref(`rooms/${roomId}/state`).get()).val()||{};
+        const deadline = serverNow() + (BASE_SEC + (s1.elimCount||0)*EXTRA_PER_ELIM)*1000;
+        await db.ref(`rooms/${roomId}/state/turn/deadlineAt`).set(deadline);
+      }
+    }
+
+    /* ==== Seçim + elenme + sıra devri ==== */
+    async function onPickRequest(n){
+      const roomRef=db.ref(`rooms/${roomId}`);
+      let committed=false;
+      await roomRef.transaction(room=>{
+        if(!room||!room.state||!room.state.started||room.state.finished) return room;
+        const turn=room.state.turn||{}; const order=turn.order||[]; const idx=turn.idx||0; const currentPid=order[idx];
+        if(currentPid!==playerId) return room;
+
+        if(!room.numbers) room.numbers={}; if(room.numbers[n]) return room;
+        if(!room.players) room.players={}; const pickerName=room.players[playerId]?.name||'';
+        room.numbers[n]={pickerId:playerId,pickerName,at:{".sv":"timestamp"}};
+
+        const secrets=room.secrets||{};
+        const victims=Object.keys(secrets).filter(pid=>Number(secrets[pid])===Number(n) && room.players[pid] && room.players[pid].alive!==false);
+        victims.forEach(pid=>{ room.players[pid].alive=false; });
+        room.state.elimCount=(room.state.elimCount||0)+victims.length;
+
+        const fullOrder=order.filter(pid=>room.players[pid]);
+        const aliveOrder=fullOrder.filter(pid=>room.players[pid].alive!==false);
+
+        if (aliveOrder.length===1){
+          const loserId=aliveOrder[0];
+          room.state.started=false; room.state.finished=true;
+          room.state.finishedAt={".sv":"timestamp"}; room.state.loserId=loserId; room.state.loserName=room.players[loserId]?.name||''; room.state.phase='finished';
+          return room;
+        }
+
+        const currIdxAlive=aliveOrder.indexOf(currentPid); const nextPid=aliveOrder[(currIdxAlive+1)%aliveOrder.length];
+        const newIdx=fullOrder.indexOf(nextPid); room.state.turn.idx=(newIdx>=0?newIdx:0);
+        room.state.turn.currentName=room.players[nextPid]?.name||'';
+        room.state.turn.deadlineAt={".sv":"timestamp"};
+        return room;
+      }, (e,ok)=>{committed=ok;});
+
+      if (committed){
+        const s2=(await db.ref(`rooms/${roomId}/state`).get()).val()||{};
+        if (!s2.finished && s2.started){
+          const deadline = serverNow() + (BASE_SEC + (s2.elimCount||0)*EXTRA_PER_ELIM)*1000;
+          await db.ref(`rooms/${roomId}/state/turn/deadlineAt`).set(deadline);
+        }
+      }
+    }
+
+    /* ==== Süre dolarsa rastgele ==== */
+    function autoPickRandom(){
+      if (!myTurn || !started) return;
+      const free=availableNums.slice(); if(!free.length) return;
+      const n=free[Math.floor(Math.random()*free.length)];
+      onPickRequest(n);
+    }
+
+    /* ==== Bitince yeni turu hazırla ==== */
+    async function prepareNextRound(){
+      const stateRef=db.ref(`rooms/${roomId}/state`); let committed=false;
+      await stateRef.transaction(st=>{ if(!st||!st.finished||st.nextRoundPrepared) return st; st.nextRoundPrepared=true; st.phase='choosing'; return st; },(e,ok)=>{committed=ok;});
+      if(!committed) return;
+      const updates={};
+      updates[`rooms/${roomId}/numbers`]=null;
+      updates[`rooms/${roomId}/secrets`]=null;
+      updates[`rooms/${roomId}/state/started`]=false;
+      updates[`rooms/${roomId}/state/finished`]=false;
+      updates[`rooms/${roomId}/state/turn`]=null;
+      updates[`rooms/${roomId}/state/finishedAt`]=null;
+      updates[`rooms/${roomId}/state/loserId`]=null;
+      updates[`rooms/${roomId}/state/loserName`]=null;
+
+      const pSnap=await db.ref(`rooms/${roomId}/players`).get();
+      const players=pSnap.val()||{};
+      Object.keys(players).forEach(pid=>{
+        updates[`rooms/${roomId}/players/${pid}/alive`]=true;
+        updates[`rooms/${roomId}/players/${pid}/ready`]=false;
+      });
+
+      await db.ref().update(updates);
+      // Herkes tekrar gizli sayı seçecek
+    }
+  </script>
+</body>
+</html>
