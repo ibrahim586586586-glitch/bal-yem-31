@@ -60,7 +60,7 @@
   .card.me{outline:3px solid var(--ok)}
   .card.disabled{opacity:.45; cursor:not-allowed}
 
-  /* Countdown bubble */
+  /* Countdown bubble (sadece sıra süresi) */
   .countdown{font-weight:900;font-size:18px;padding:6px 10px;border-radius:10px;background:#101820;margin-left:8px}
 
   /* End banner */
@@ -118,7 +118,7 @@
       <div id="cheatBox" style="display:none; margin-top:8px; padding:8px; background:#16232c; border-radius:8px; font-size:14px"></div>
 
       <div class="muted" style="margin-top:8px">
-        Akış: İsim → <b>Gizli sayı</b> → <b>Hazırım</b> → (1–3) → Başlar → Sıra ile → Süre dolarsa otomatik seçim → Elenme → Son kalan için mesaj → Otomatik yeni tur.
+        Akış: İsim → <b>Gizli sayı</b> → <b>Hazırım</b> → Başlar → Sıra ile → Süre dolarsa otomatik seçim → Elenme → Son kalan için mesaj → Otomatik yeni tur.
       </div>
     </section>
   </div>
@@ -140,7 +140,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
   <script>
-    // 0) Firebase config — senin verdiğin
+    // Firebase config — senin verdiğin
     const firebaseConfig = {
       apiKey: "AIzaSyAVGICVQBgLtK7TAHs52jtTr_dXQYFcP0I",
       authDomain: "oyunu-82e8f.firebaseapp.com",
@@ -247,11 +247,13 @@
       location.href = location.pathname;
     };
 
-    /* ==== Oyuncular listesi ==== */
+    /* ==== Oyuncular listesi (odadan düşersen login'e dön) ==== */
     function subscribePlayers(){
       db.ref(`rooms/${roomId}/players`).on('value', snap=>{
         playersEl.innerHTML=''; const data=snap.val()||{};
         const list=Object.entries(data).sort((a,b)=>(a[1].joinedAt||0)-(b[1].joinedAt||0));
+        const amIInRoom = !!data[playerId];
+
         let aliveCount=0;
         list.forEach(([pid,info],idx)=>{
           const chip=document.createElement('div');
@@ -259,10 +261,17 @@
           const ord=document.createElement('span'); ord.className='order'; ord.textContent=idx+1;
           const dot=document.createElement('span'); dot.className='dot '+(info.ready?'ready':'wait');
           const txt=document.createElement('span'); txt.textContent=info.name||'Oyuncu';
-          chip.appendChild(ord); chip.appendChild(dot); chip.appendChild(txt); playersEl.appendChild(chip);
+          chip.append(ord, dot, txt); playersEl.appendChild(chip);
           if (info.alive!==false) aliveCount++; if (pid===playerId) myAlive=(info.alive!==false);
         });
         aliveTag.textContent='Canlı: '+aliveCount;
+
+        if (!amIInRoom && game.style.display==='block') {
+          game.style.display='none';
+          login.style.display='block';
+          readyBtn.style.display='inline-block';
+          unreadyBtn.style.display='none';
+        }
       });
     }
 
@@ -311,7 +320,7 @@
       } else alert("Yanlış şifre!");
     };
 
-    /* ==== Oda durumu & oyun akışı ==== */
+    /* ==== Oda durumu & oyun akışı (geri sayım YOK) ==== */
     function subscribeRoomState(){
       db.ref(`rooms/${roomId}/state`).on('value', snap=>{
         const st=snap.val()||{started:false,finished:false};
@@ -328,31 +337,11 @@
           countdownBubble.style.display='none'; return;
         }
 
-        // Yeni tur: gizli sayı seçimi
-        if (st.phase==='choosing'){
-          stateTag.textContent='Yeni Tur: Gizli sayı seçin'; turnTag.style.display='none'; countdownBubble.style.display='none';
-          for (let i=1;i<=31;i++){ const btn=cards.get(i); btn.disabled=true; btn.classList.add('disabled'); }
-          if (mySecret==null) openSecretModal();
-          readyBtn.style.display='inline-block'; unreadyBtn.style.display='none';
-          started=false; myTurn=false; currentDeadlineAt=0; return;
-        }
-
-        // Geri sayım 1→3
-        if (st.phase==='countdown' && !st.started){
-          stateTag.textContent='Başlıyor';
-          const t0=st.countdownAt||0; const elapsed=Math.max(0, serverNow()-t0);
-          const step=Math.min(3, Math.floor(elapsed/1000)+1);
-          countdownBubble.style.display='inline-block'; countdownBubble.textContent=String(step);
-          if (elapsed>=3000) finalizeStartIfNeeded();
-          for (let i=1;i<=31;i++){ const btn=cards.get(i); btn.disabled=true; btn.classList.add('disabled'); }
-          return;
-        } else { countdownBubble.style.display='none'; }
-
-        // Bekleme
+        // Bekleme (oyun başlamadı)
         if (!started){
           stateTag.textContent='Bekleme'; turnTag.style.display='none';
           for (let i=1;i<=31;i++){ const btn=cards.get(i); btn.disabled=true; btn.classList.add('disabled'); }
-          currentDeadlineAt=0; return;
+          currentDeadlineAt=0; countdownBubble.style.display='none'; return;
         }
 
         // Başladı
@@ -377,7 +366,7 @@
       });
     }
 
-    // Ekranda geri sayım tık tık güncellensin
+    // Ekranda sıra sayacı akıcı güncellensin
     setInterval(()=>{
       if (!started || !currentDeadlineAt) return;
       const remain=currentDeadlineAt - serverNow();
@@ -386,7 +375,7 @@
       if (remain<=0 && myTurn) autoPickRandom();
     }, 300);
 
-    /* ==== Herkes hazır → COUNTDOWN ==== */
+    /* ==== Herkes hazır → DOĞRUDAN BAŞLAT ==== */
     async function maybeAutoStart(){
       const [pS,sS,stS]=await Promise.all([
         db.ref(`rooms/${roomId}/players`).get(),
@@ -394,41 +383,46 @@
         db.ref(`rooms/${roomId}/state`).get()
       ]);
       const players=pS.val()||{}, secrets=sS.val()||{}, st=stS.val()||{};
-      if (st.started||st.finished||st.phase==='countdown') return;
-      const ids=Object.keys(players); if(ids.length<2) return;
-      const allReady=ids.every(id=>players[id].ready===true);
-      const allSecret=ids.every(id=>!!secrets[id]);
-      if (!allReady||!allSecret) return;
-      await db.ref(`rooms/${roomId}/state`).transaction(curr=>{
-        if (curr && (curr.started||curr.finished||curr.phase==='countdown')) return;
-        return {started:false,finished:false,elimCount:curr?.elimCount||0,phase:'countdown',countdownAt:{".sv":"timestamp"}};
+      if (st.started || st.finished) return;
+
+      const ids = Object.keys(players);
+      if (ids.length < 2) return;
+
+      const ok = ids.every(id => players[id].ready===true && !!secrets[id]);
+      if (!ok) return;
+
+      // Herkes hazır → anında başlat
+      await db.ref(`rooms/${roomId}`).transaction(room=>{
+        if (!room) return room;
+        const state = room.state || {};
+        if (state.started || state.finished) return room;
+
+        const order = Object.entries(room.players||{})
+          .filter(([_,p])=>p.alive!==false)
+          .sort((a,b)=>(a[1].joinedAt||0)-(b[1].joinedAt||0))
+          .map(([pid])=>pid);
+        if (order.length < 2) return room;
+
+        const firstId = order[0];
+        state.started = true;
+        state.phase   = null; // geri sayım yok
+        state.turn = {
+          order,
+          idx: 0,
+          currentName: room.players[firstId]?.name || '',
+          deadlineAt: {".sv":"timestamp"} // birazdan gerçek deadline yazacağız
+        };
+        room.state = state;
+        return room;
       });
+
+      // İlk turun süresi
+      const s1=(await db.ref(`rooms/${roomId}/state`).get()).val()||{};
+      const deadline = serverNow() + (BASE_SEC + (s1.elimCount||0)*EXTRA_PER_ELIM)*1000;
+      await db.ref(`rooms/${roomId}/state/turn/deadlineAt`).set(deadline);
     }
     db.ref(`rooms/${roomId}/players`).on('value', ()=>maybeAutoStart());
     db.ref(`rooms/${roomId}/secrets`).on('value', ()=>maybeAutoStart());
-
-    /* ==== COUNTDOWN → START ==== */
-    async function finalizeStartIfNeeded(){
-      const roomRef=db.ref(`rooms/${roomId}`);
-      let committed=false;
-      await roomRef.transaction(room=>{
-        if(!room) return room; const st=room.state||{};
-        if (st.started||st.finished||st.phase!=='countdown') return room;
-        const players=room.players||{};
-        const ordered=Object.entries(players).filter(([_,p])=>p.alive!==false)
-          .sort((a,b)=>(a[1].joinedAt||0)-(b[1].joinedAt||0)).map(([pid,_])=>pid);
-        if (ordered.length<2) return room;
-        const firstId=ordered[0];
-        st.started=true; st.phase=null;
-        st.turn={order:ordered,idx:0,currentName:players[firstId]?.name||''};
-        room.state=st; return room;
-      }, (e,ok)=>{committed=ok;});
-      if (committed){
-        const s1=(await db.ref(`rooms/${roomId}/state`).get()).val()||{};
-        const deadline = serverNow() + (BASE_SEC + (s1.elimCount||0)*EXTRA_PER_ELIM)*1000;
-        await db.ref(`rooms/${roomId}/state/turn/deadlineAt`).set(deadline);
-      }
-    }
 
     /* ==== Seçim + elenme + sıra devri ==== */
     async function onPickRequest(n){
