@@ -247,12 +247,11 @@
       location.href = location.pathname;
     };
 
-    /* ==== Oyuncular listesi (odadan düşersen login'e dön) ==== */
+    /* ==== Oyuncular listesi (geri atma yok) ==== */
     function subscribePlayers(){
       db.ref(`rooms/${roomId}/players`).on('value', snap=>{
         playersEl.innerHTML=''; const data=snap.val()||{};
         const list=Object.entries(data).sort((a,b)=>(a[1].joinedAt||0)-(b[1].joinedAt||0));
-        const amIInRoom = !!data[playerId];
 
         let aliveCount=0;
         list.forEach(([pid,info],idx)=>{
@@ -262,16 +261,13 @@
           const dot=document.createElement('span'); dot.className='dot '+(info.ready?'ready':'wait');
           const txt=document.createElement('span'); txt.textContent=info.name||'Oyuncu';
           chip.append(ord, dot, txt); playersEl.appendChild(chip);
-          if (info.alive!==false) aliveCount++; if (pid===playerId) myAlive=(info.alive!==false);
+          if (info.alive!==false) aliveCount++;
+          if (pid===playerId) myAlive=(info.alive!==false);
         });
         aliveTag.textContent='Canlı: '+aliveCount;
 
-        if (!amIInRoom && game.style.display==='block') {
-          game.style.display='none';
-          login.style.display='block';
-          readyBtn.style.display='inline-block';
-          unreadyBtn.style.display='none';
-        }
+        // ÖNEMLİ: Burada "listede yoksa login'e dön" kontrolü YOK.
+        // "Hazırım" sırasında anlık güncellemelerde yanlış tetikleniyordu.
       });
     }
 
