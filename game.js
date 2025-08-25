@@ -1,4 +1,4 @@
-// ===== Firebase Config (balyem31) =====
+/* ===== Firebase init (senin config'in) ===== */
 const firebaseConfig = {
   apiKey: "AIzaSyCcRvIrK81msK5AAM3dPNLgvTo3rkpqkN4",
   authDomain: "balyem31.firebaseapp.com",
@@ -12,299 +12,334 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-/* ---------- Kısa yardımcılar ---------- */
+/* ===== Helpers ===== */
 const $ = s => document.querySelector(s);
-const roomList = $("#roomList");
-const lobby = $("#lobby"), roomSec = $("#room");
-const nameInput = $("#nameInput");
-const openRoomBtn = $("#openRoomBtn");
-const roomTitle = $("#roomTitle");
-const playersEl = $("#players");
-const stateTag = $("#stateTag");
-const turnTag = $("#turnTag");
-const aliveTag = $("#aliveTag");
-const gridEl = $("#grid");
-const secretSelect = $("#secretSelect");
-const saveSecretBtn = $("#saveSecretBtn");
-const mySecretInfo = $("#mySecretInfo");
-const readyBtn = $("#readyBtn");
-const unreadyBtn = $("#unreadyBtn");
-const startBtn = $("#startBtn");
-const leaveBtn = $("#leaveBtn");
+const params = new URLSearchParams(location.search);
 
-/* ---------- Splash → Lobby ---------- */
-window.addEventListener("DOMContentLoaded",()=>{
-  setTimeout(()=>{$("#splash").classList.add("hidden"); lobby.classList.remove("hidden");},1200);
-  // Secret dropdown 1..31
-  for(let i=1;i<=31;i++){ const o=document.createElement("option"); o.value=i; o.textContent=i; secretSelect.appendChild(o); }
-  // Sayı grid
-  for(let i=1;i<=31;i++){
-    const b=document.createElement("button");
-    b.className="num disabled"; b.textContent=i; b.dataset.n=i;
-    b.onclick=()=>tryPick(i);
-    gridEl.appendChild(b);
-  }
-  watchOpenRooms();
-});
+const splash = $('#splash');
+const home = $('#home');
+const login = $('#login');
+const game = $('#game');
 
-/* ---------- Global durum ---------- */
-let myId = "p_"+Math.random().toString(36).slice(2,10);
-let myName = null;
-let roomId = null;     // oda-1 …
+const loginInfo = $('#loginRoomInfo');
+const nameInput = $('#nameInput');
+const joinBtn = $('#joinBtn');
+const createRoomBtn = $('#createRoomBtn');
+const goRoomBtn = $('#goRoomBtn');
+const roomInput = $('#roomInput');
+
+const roomTitle = $('#roomTitle');
+const stateTag = $('#stateTag');
+const turnTag = $('#turnTag');
+const aliveTag = $('#aliveTag');
+const playersEl = $('#players');
+const gridEl = $('#grid');
+const readyBtn = $('#readyBtn');
+const unreadyBtn = $('#unreadyBtn');
+const startBtn = $('#startBtn');
+const cheatBtn = $('#cheatBtn');
+const cheatBox = $('#cheatBox');
+const leaveBtn = $('#leaveBtn');
+
+const secretModal = $('#secretModal');
+const secretGrid = $('#secretGrid');
+const saveSecretBtn = $('#saveSecretBtn');
+const flash = $('#flash');
+const endBanner = $('#endBanner');
+
+function show(el){ el.style.display='block' }
+function hide(el){ el.style.display='none' }
+function toast(text,ms=1600){ flash.querySelector('.msg').textContent=text; show(flash); setTimeout(()=>hide(flash),ms) }
+
+let roomId = params.get('room') || '';
+let playerId = "p_"+Math.random().toString(36).slice(2,10);
 let isHost = false;
 let mySecret = null;
 let started = false;
+let myTurn = false;
+let orderCache = [];
+const cards = new Map();
 
-/* ---------- Odalar listesi ---------- */
-function watchOpenRooms(){
-  db.ref("rooms").orderByChild("open").equalTo(true).on("value",snap=>{
-    roomList.innerHTML="";
-    const rooms=snap.val()||{};
-    const entries=Object.entries(rooms).sort((a,b)=> (b[1].createdAt||0)-(a[1].createdAt||0));
-    if(!entries.length){
-      const p=document.createElement("div"); p.className="muted"; p.textContent="Açık oda yok. ‘Oda Aç’a bas."; roomList.appendChild(p);
-      return;
-    }
-    entries.forEach(([rid,r])=>{
-      const box=document.createElement("div"); box.className="pill";
-      box.innerHTML=`<b>${rid}</b> • kişi: ${Object.keys(r.players||{}).length} • durum: ${r.state?.phase||"lobi"}`;
-      const btn=document.createElement("button"); btn.textContent="Katıl"; btn.className="primary"; btn.style.marginLeft="8px";
-      btn.onclick=()=>joinRoom(rid);
-      box.appendChild(btn); roomList.appendChild(box);
-    });
-  });
+/* presence */
+let myRef = null;
+
+/* Splash 5 sn */
+window.addEventListener('DOMContentLoaded', ()=>{
+  setTimeout(()=>{
+    hide(splash);
+    if(roomId){ roomInput.value = roomId; showLogin(roomId); }
+    else show(home);
+  }, 1200); // hızlı açalım
+});
+
+/* ==== UI build ==== */
+for(let i=1;i<=31;i++){
+  const b=document.createElement('button');
+  b.className='card disabled'; b.textContent=i; b.dataset.num=i; b.disabled=true;
+  b.onclick=()=>onPick(i);
+  gridEl.appendChild(b); cards.set(i,b);
 }
-
-/* ---------- Oda Aç ---------- */
-openRoomBtn.onclick = async ()=>{
-  myName = (nameInput.value||"").trim();
-  if(!myName){ alert("Önce ad yaz."); return; }
-
-  // Sıralı oda adı için counter
-  const metaRef = db.ref("roomsMeta/nextId");
-  let newNo = 1;
-  await metaRef.transaction(x => (x||0)+1, (_e,ok,snap)=>{ if(ok) newNo=snap.val() });
-  const rid = "oda-"+newNo;
-
-  // Odayı oluştur
-  const roomRef = db.ref("rooms/"+rid);
-  await roomRef.set({
-    open:true,
-    createdAt: firebase.database.ServerValue.TIMESTAMP,
-    ownerId: myId,
-    state: { phase:"lobi", started:false, currentId:null, finished:false }
-  });
-
-  // Odaya katıl
-  await joinRoom(rid, /*asHost*/true);
+let tempSecret=null;
+for(let i=1;i<=31;i++){
+  const b=document.createElement('button'); b.textContent=i;
+  b.onclick=()=>{ tempSecret=i; [...secretGrid.children].forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); saveSecretBtn.disabled=false; };
+  secretGrid.appendChild(b);
+}
+saveSecretBtn.onclick=async ()=>{
+  if(!tempSecret) return;
+  mySecret = tempSecret;
+  await db.ref(`rooms/${roomId}/secrets/${playerId}`).set(mySecret);
+  await db.ref(`rooms/${roomId}/players/${playerId}/ready`).set(false);
+  hide(secretModal); toast('Gizli sayı kaydedildi');
 };
 
-/* ---------- Odaya Katıl ---------- */
-async function joinRoom(rid, asHost=false){
-  myName = myName || (nameInput.value||"").trim();
-  if(!myName){ alert("Adını yaz!"); return; }
-
-  roomId = rid; isHost = !!asHost;
-  const pRef = db.ref(`rooms/${roomId}/players/${myId}`);
-  await pRef.set({ name: myName, ready:false, alive:true, joinedAt: firebase.database.ServerValue.TIMESTAMP });
-  pRef.onDisconnect().remove();
-
-  lobby.classList.add("hidden");
-  roomSec.classList.remove("hidden");
-  roomTitle.textContent = "Oda: "+roomId;
-
-  watchRoom();
-  watchPlayers();
-  watchNumbers();
-
-  // lobi aşamasında kendi gizli sayını seç ve kaydet
-  mySecret = null; mySecretInfo.classList.add("hidden");
-  startBtn.classList.add("hidden");
-  stateTag.textContent = "Bekleme";
-}
-
-/* ---------- Oyuncular ---------- */
-function watchPlayers(){
-  db.ref(`rooms/${roomId}/players`).on("value",snap=>{
-    playersEl.innerHTML="";
-    const players=snap.val()||{};
-    const list=Object.entries(players).sort((a,b)=>(a[1].joinedAt||0)-(b[1].joinedAt||0));
-    let alive=0, firstId = list[0]?.[0];
-    list.forEach(([pid,info],i)=>{
-      const chip=document.createElement("div");
-      chip.className="chip"+(pid===myId?" me":"")+(info.alive===false?" dead":"");
-      const dot=document.createElement("span"); dot.className="dot"+(info.ready?" ready":"");
-      const ord=document.createElement("span"); ord.className="pill"; ord.textContent=(i+1);
-      const nm=document.createElement("span"); nm.textContent=info.name;
-      chip.appendChild(ord); chip.appendChild(dot); chip.appendChild(nm);
-      playersEl.appendChild(chip);
-      if(info.alive!==false) alive++;
-    });
-    aliveTag.textContent = "Canlı: "+alive;
-
-    // İlk girense start butonu onun
-    isHost = (firstId===myId);
-    if(!started){
-      if(isHost) startBtn.classList.remove("hidden"); else startBtn.classList.add("hidden");
-    }
+/* ==== Home → Login ==== */
+createRoomBtn.onclick = async ()=>{
+  // oda id üret (roomsMeta/counter)
+  const metaRef = db.ref('roomsMeta/counter');
+  const snap = await metaRef.transaction(x=> (x||0)+1);
+  const n = snap.snapshot.val();
+  roomId = `oda-${n}`;
+  await db.ref(`rooms/${roomId}`).set({
+    state: { phase:'lobby', hostId:null, started:false },
+    createdAt: firebase.database.ServerValue.TIMESTAMP
   });
+  roomInput.value = roomId;
+  showLogin(roomId);
+};
+goRoomBtn.onclick = ()=>{
+  const rid = (roomInput.value||'').trim();
+  if(!rid){ alert('Oda kodu yaz'); return; }
+  roomId = rid;
+  showLogin(roomId);
+};
+function showLogin(rid){
+  hide(home); show(login);
+  loginInfo.textContent = `Oda: ${rid}`;
 }
 
-/* ---------- Oda durumu ---------- */
-function watchRoom(){
-  db.ref(`rooms/${roomId}/state`).on("value",snap=>{
-    const st=snap.val()||{};
-    started = !!st.started;
-    const phase = st.phase || (st.started?"oyun":"lobi");
-    stateTag.textContent = phase==="lobi"?"Bekleme":phase==="oyun"?"Oyun Başladı":phase==="bitti"?"Bitti":phase;
+/* ==== Join ==== */
+joinBtn.onclick = async ()=>{
+  const name=(nameInput.value||'').trim();
+  if(!name){ alert('Adını yaz'); return; }
 
-    // sıra etiketi
-    if(st.currentId){
-      turnTag.textContent = (st.currentId===myId) ? "Sıra Sende" : `Sıradaki: ${st.currentName||"—"}`;
-      turnTag.classList.add("tag"); turnTag.classList.add("turn");
-    } else {
-      turnTag.textContent = "—";
-      turnTag.className="pill";
-    }
+  // oyuncu sayısı kontrol (max 10)
+  const pSnap = await db.ref(`rooms/${roomId}/players`).get();
+  const count = Object.keys(pSnap.val()||{}).length;
+  if(count>=10){ alert('Oda dolu (10/10)'); return; }
 
-    // Lobi: hazır/başlat görünürlük
-    if(!st.started && !st.finished){
-      readyBtn.classList.remove("hidden");
-      unreadyBtn.classList.add("hidden");
-      // herkes hazır mı?
-      Promise.all([
-        db.ref(`rooms/${roomId}/players`).get(),
-        db.ref(`rooms/${roomId}/secrets`).get()
-      ]).then(([pS,sS])=>{
-        const players=pS.val()||{}, secrets=sS.val()||{};
-        const ids=Object.keys(players);
-        const allReady = ids.length>=2 && ids.every(id => players[id].ready===true) && ids.every(id => !!secrets[id]);
-        if(isHost) startBtn.classList.toggle("hidden", !allReady);
-      });
-    }
+  // host belirle
+  const hostIdSnap = await db.ref(`rooms/${roomId}/state/hostId`).get();
+  if(!hostIdSnap.exists()) isHost = true;
 
-    // Bitti ise oyuncuyu lobiye at
-    if(st.finished){
-      alert(`Oyun bitti! Kazanan: ${st.winnerName||"—"}`);
-      // kendini odadan sil, lobiye dön
-      db.ref(`rooms/${roomId}/players/${myId}`).remove().finally(()=>{
-        roomId = null; roomSec.classList.add("hidden"); lobby.classList.remove("hidden");
-      });
-    }
-  });
-}
+  myRef = db.ref(`rooms/${roomId}/players/${playerId}`);
+  await myRef.set({ name, ready:false, alive:true, joinedAt: firebase.database.ServerValue.TIMESTAMP });
+  myRef.onDisconnect().remove();
 
-/* ---------- Sayılar ---------- */
-let taken = new Set();
-function watchNumbers(){
-  db.ref(`rooms/${roomId}/numbers`).on("value",snap=>{
-    const data=snap.val()||{};
-    taken = new Set(Object.keys(data).map(n=>+n));
-    for(let i=1;i<=31;i++){
-      const b=gridEl.querySelector(`[data-n="${i}"]`);
-      b.classList.remove("taken","me","disabled");
-      if(taken.has(i)){ b.classList.add("taken"); b.classList.add("disabled"); if(data[i].pickerId===myId) b.classList.add("me"); }
-      if(!started) b.classList.add("disabled");
-    }
-  });
-}
-
-/* ---------- Gizli sayı kaydet ---------- */
-saveSecretBtn.onclick = async ()=>{
-  if(!roomId) return;
-  mySecret = +secretSelect.value;
-  await db.ref(`rooms/${roomId}/secrets/${myId}`).set(mySecret);
-  mySecretInfo.textContent = `Gizlin: ${mySecret}`; mySecretInfo.classList.remove("hidden");
-  alert("Gizli sayı kaydedildi. 'Hazırım' deyip bekle.");
-};
-
-/* ---------- Hazır / değil ---------- */
-readyBtn.onclick = async ()=>{
-  if(mySecret==null){ alert("Önce gizli sayını seç!"); return; }
-  await db.ref(`rooms/${roomId}/players/${myId}/ready`).set(true);
-  readyBtn.classList.add("hidden"); unreadyBtn.classList.remove("hidden");
-};
-unreadyBtn.onclick = async ()=>{
-  await db.ref(`rooms/${roomId}/players/${myId}/ready`).set(false);
-  unreadyBtn.classList.add("hidden"); readyBtn.classList.remove("hidden");
-};
-
-/* ---------- Başlat (yalnızca ilk giren) ---------- */
-startBtn.onclick = async ()=>{
-  if(!isHost){ return; }
-  // herkes hazır mı tekrar kontrol
-  const [pS,sS] = await Promise.all([
-    db.ref(`rooms/${roomId}/players`).get(),
-    db.ref(`rooms/${roomId}/secrets`).get()
-  ]);
-  const players = pS.val()||{}, secrets=sS.val()||{};
-  const ids = Object.keys(players);
-  if(!(ids.length>=2 && ids.every(id=>players[id].ready===true) && ids.every(id=>!!secrets[id]))){
-    alert("Herkes hazır/gizli sayı seçmiş olmalı (en az 2 kişi)."); return;
+  if(isHost){
+    await db.ref(`rooms/${roomId}/state/hostId`).set(playerId);
   }
 
-  // sıra: ilk girenden başlar
-  const order = ids.sort((a,b)=>(players[a].joinedAt||0)-(players[b].joinedAt||0));
-  const firstId = order[0];
-
-  await db.ref(`rooms/${roomId}/state`).set({
-    phase:"oyun", started:true, finished:false,
-    currentId:firstId, currentName: players[firstId]?.name || "",
-  });
+  hide(login); show(game);
+  roomTitle.textContent = `Oda: ${roomId}`;
+  subscribe();
+  show(secretModal); // gizli sayı seçtir
 };
 
-/* ---------- Seçim (sadece sıradaki kişi) ---------- */
-async function tryPick(n){
-  if(!roomId || !started) return;
+/* ==== Leave ==== */
+leaveBtn.onclick = async ()=>{
+  if(myRef) await myRef.remove();
+  location.href = location.pathname; // ana ekrana
+};
 
-  let committed=false, winnerName=null;
-  await db.ref(`rooms/${roomId}`).transaction(room=>{
-    if(!room || !room.state || !room.state.started || room.state.finished) return room;
-    const st=room.state, players=room.players||{};
-    const current=st.currentId;
-    if(current!==myId) return room;             // sadece sırası gelen
+/* ==== Ready / Unready ==== */
+readyBtn.onclick = async ()=>{
+  if(mySecret==null){ show(secretModal); return; }
+  await db.ref(`rooms/${roomId}/players/${playerId}/ready`).set(true);
+  hide(readyBtn); show(unreadyBtn);
+};
+unreadyBtn.onclick = async ()=>{
+  await db.ref(`rooms/${roomId}/players/${playerId}/ready`).set(false);
+  show(readyBtn); hide(unreadyBtn);
+};
 
-    // sayı boşta mı?
-    room.numbers = room.numbers || {};
-    if(room.numbers[n]) return room;
+/* ==== Start (only host) ==== */
+startBtn.onclick = async ()=>{
+  const pS = await db.ref(`rooms/${roomId}/players`).get();
+  const sS = await db.ref(`rooms/${roomId}/secrets`).get();
+  const players = pS.val()||{}, secrets = sS.val()||{};
+  const ids = Object.keys(players);
+  if(ids.length<2){ alert('En az 2 oyuncu gerekir'); return; }
+  const allReady = ids.every(id => players[id].ready===true);
+  const allSecret = ids.every(id => !!secrets[id]);
+  if(!allReady){ alert('Herkes Hazır olmalı'); return; }
+  if(!allSecret){ alert('Herkes gizli sayı seçmeli'); return; }
 
-    // sayıyı al
-    room.numbers[n] = { pickerId: myId, pickerName: players[myId]?.name||"", at:{".sv":"timestamp"} };
+  // joinedAt sırasına göre order
+  const ordered = Object.entries(players).sort((a,b)=>(a[1].joinedAt||0)-(b[1].joinedAt||0)).map(([pid])=>pid);
 
-    // aynı sayıyı seçmiş olan herkes elensin
-    const secrets = room.secrets || {};
-    Object.keys(players).forEach(pid=>{
-      if(players[pid] && players[pid].alive!==false && +secrets[pid]===+n){
-        players[pid].alive = false;
+  await db.ref(`rooms/${roomId}/state`).update({
+    phase:'playing', started:true, finished:false,
+    turn:{ order: ordered, idx:0, currentName: players[ordered[0]].name }
+  });
+  toast('Oyun başladı!');
+};
+
+/* ==== Numbers pick ==== */
+async function onPick(n){
+  if(!started || !myTurn) return;
+
+  // Transaction: aynı sayı iki kez seçilemesin
+  const roomRef = db.ref(`rooms/${roomId}`);
+  let committed=false;
+  await roomRef.transaction(room=>{
+    if(!room || !room.state || room.state.phase!=='playing') return room;
+
+    if(!room.numbers) room.numbers={};
+    if(room.numbers[n]) return room; // zaten seçilmiş
+
+    const turn=room.state.turn||{};
+    const order=turn.order||[];
+    const idx=turn.idx||0;
+    const currentPid=order[idx];
+    if(currentPid!==playerId) return room; // ben değilsem
+
+    // sayıyı işle
+    const pickerName = room.players[playerId]?.name || '';
+    room.numbers[n] = { pickerId:playerId, pickerName, at:{".sv":"timestamp"} };
+
+    // elenecekler (aynı gizli sayıyı seçmiş olanlar)
+    const secs = room.secrets||{};
+    Object.entries(secs).forEach(([pid,num])=>{
+      if(Number(num)===Number(n) && room.players[pid] && room.players[pid].alive!==false){
+        room.players[pid].alive=false;
       }
     });
 
-    // yaşayanlar
-    const aliveIds = Object.keys(players).filter(pid => players[pid].alive!==false);
+    // canlılar
+    const fullOrder = order.filter(pid=>room.players[pid]);
+    const aliveOrder = fullOrder.filter(pid=>room.players[pid].alive!==false);
 
-    if(aliveIds.length===1){
-      st.started=false; st.finished=true; st.phase="bitti";
-      st.currentId=null; st.currentName="";
-      st.winnerId = aliveIds[0]; st.winnerName = players[aliveIds[0]]?.name || "";
-      room.state = st; return room;
+    // bitti mi?
+    if(aliveOrder.length===1){
+      const winnerId = aliveOrder[0];
+      room.state.phase='finished';
+      room.state.started=false;
+      room.state.winnerId = winnerId;
+      room.state.winnerName = room.players[winnerId]?.name || '';
+      return room;
     }
 
-    // sırayı yaşayanlar arasında sıradakine ver
-    const order = Object.keys(players).sort((a,b)=>(players[a].joinedAt||0)-(players[b].joinedAt||0))
-                      .filter(pid => players[pid].alive!==false);
-    const idx = order.indexOf(current);
-    const nextId = order[(idx+1)%order.length];
-    st.currentId = nextId; st.currentName = players[nextId]?.name||"";
-    room.state = st;
+    // sırayı devret
+    const currIdxAlive = aliveOrder.indexOf(currentPid);
+    const nextPid = aliveOrder[(currIdxAlive+1) % aliveOrder.length];
+    const newIdx = fullOrder.indexOf(nextPid);
+    room.state.turn.idx = (newIdx>=0?newIdx:0);
+    room.state.turn.currentName = room.players[nextPid]?.name || '';
     return room;
-  },(_e,ok,_snap)=>{ committed=ok; });
+  }, (e,ok)=>{ committed=ok; });
 
-  if(!committed){ return; }
+  if(!committed) return;
 }
 
-/* ---------- Odadan çık ---------- */
-leaveBtn.onclick = async ()=>{
-  if(!roomId) return;
-  await db.ref(`rooms/${roomId}/players/${myId}`).remove();
-  roomId=null; roomSec.classList.add("hidden"); lobby.classList.remove("hidden");
-};
+/* ==== Subscriptions ==== */
+function subscribe(){
+  // players
+  db.ref(`rooms/${roomId}/players`).on('value', snap=>{
+    const data = snap.val()||{};
+    playersEl.innerHTML='';
+    const list = Object.entries(data).sort((a,b)=>(a[1].joinedAt||0)-(b[1].joinedAt||0));
+    let aliveCount=0;
+    list.forEach(([pid,info],idx)=>{
+      const chip=document.createElement('div');
+      chip.className='chip'+(pid===playerId?' me':'')+(info.alive===false?' dead':'');
+      const ord=document.createElement('span'); ord.className='order'; ord.textContent=idx+1;
+      const dot=document.createElement('span'); dot.className='dot '+(info.ready?'ready':'wait');
+      const txt=document.createElement('span'); txt.textContent=info.name||'Oyuncu';
+      chip.appendChild(ord); chip.appendChild(dot); chip.appendChild(txt);
+      playersEl.appendChild(chip);
+      if(info.alive!==false) aliveCount++;
+    });
+    aliveTag.textContent = 'Canlı: '+aliveCount;
+  });
+
+  // numbers
+  db.ref(`rooms/${roomId}/numbers`).on('value', snap=>{
+    const data = snap.val()||{};
+    for(let i=1;i<=31;i++){
+      const b=cards.get(i);
+      const taken = !!data[i];
+      b.className = 'card'+(taken?' taken':'');
+      if(taken && data[i].pickerId===playerId) b.classList.add('me');
+      b.disabled = true; // default pasif; state dinlemesi aktif edebilir
+    }
+  });
+
+  // secrets cheat view (şifre: 200)
+  cheatBtn.onclick = async ()=>{
+    const pass = prompt('Şifre?');
+    if(pass!=='200'){ alert('Yanlış şifre'); return; }
+    const [pS,sS] = await Promise.all([
+      db.ref(`rooms/${roomId}/players`).get(),
+      db.ref(`rooms/${roomId}/secrets`).get()
+    ]);
+    const players = pS.val()||{}, secrets = sS.val()||{};
+    cheatBox.innerHTML = '<b>Gizli Sayılar:</b><br>';
+    Object.entries(players).forEach(([pid,info])=>{
+      const num = secrets[pid];
+      if(num!=null) cheatBox.innerHTML += `${info.name}: ${num}<br>`;
+    });
+    cheatBox.style.display='block';
+  };
+
+  // state
+  db.ref(`rooms/${roomId}/state`).on('value', snap=>{
+    const st = snap.val()||{phase:'lobby', started:false};
+    started = (st.phase==='playing');
+    isHost = (st.hostId===playerId);
+    startBtn.style.display = (!started && isHost && st.phase==='lobby') ? 'inline-block':'none';
+
+    // turn info
+    if(st.phase==='playing'){
+      stateTag.textContent='Başladı';
+      stateTag.classList.add('started');
+      const order = st.turn?.order||[]; orderCache=order;
+      const idx = st.turn?.idx||0; const currentId = order[idx];
+      myTurn = (currentId===playerId);
+      turnTag.style.display='inline-block';
+      turnTag.textContent = myTurn ? 'Sıra Sende' : `Sıradaki: ${st.turn?.currentName||'-'}`;
+      turnTag.classList.toggle('you', myTurn);
+      turnTag.classList.toggle('turn', !myTurn);
+
+      // kartları aktive et
+      for(let i=1;i<=31;i++){
+        const b=cards.get(i);
+        const taken = b.classList.contains('taken');
+        b.disabled = (!myTurn || taken);
+        b.classList.toggle('disabled', b.disabled);
+      }
+    } else if(st.phase==='lobby'){
+      stateTag.textContent='Bekleme';
+      turnTag.style.display='none';
+      // kartlar pasif
+      for(let i=1;i<=31;i++){ const b=cards.get(i); b.disabled=true; b.classList.add('disabled'); }
+      show(readyBtn); hide(unreadyBtn);
+    } else if(st.phase==='finished'){
+      const name = st.winnerName || '—';
+      endBanner.textContent = `Oyun bitti! Kazanan: ${name}`;
+      endBanner.style.display='block';
+      turnTag.style.display='none';
+      // host temizlik
+      if(isHost){
+        setTimeout(async ()=>{
+          await db.ref(`rooms/${roomId}`).remove();
+          location.href = location.pathname; // ana ekran
+        }, 2500);
+      }
+    }
+  });
+}
+
+/* ==== Tiny UX ==== */
+function show(el){ el.style.display='block' }
+function hide(el){ el.style.display='none' }
