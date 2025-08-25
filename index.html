@@ -6,135 +6,96 @@
 <title>BAL YEM 31 — Online</title>
 <style>
   :root{
-    --bg:#1e2a33; --panel:#223240; --ok:#27ae60; --warn:#f1c40f; --danger:#e74c3c; --info:#2d6cdf;
-    --text:#f7f8fa; --muted:#c9d1d9; --card:#ffffff; --border:#e74c3c;
+    --bg:#121a22; --panel:#1c2a36; --text:#f6f8fa; --muted:#9fb1bf;
+    --ok:#27ae60; --danger:#e74c3c; --chip:#162431; --card:#0e151c;
   }
-  *{box-sizing:border-box}
-  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--text)}
-  .wrap{max-width:720px;margin:0 auto;padding:16px}
+  *{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--text)}
+  .wrap{max-width:780px;margin:0 auto;padding:16px}
   .panel{background:var(--panel);border-radius:14px;padding:16px;box-shadow:0 10px 28px rgba(0,0,0,.25)}
-  h1{margin:8px 0 16px;font-size:clamp(22px,5vw,28px)}
-  input{width:100%;padding:12px;border:none;border-radius:10px;background:#16232c;color:var(--text);margin-bottom:10px}
+  h1{margin:6px 0 12px;font-size:clamp(22px,5vw,28px)}
+  input{width:100%;padding:12px;border:none;border-radius:10px;background:#0b1218;color:var(--text);margin:8px 0}
   button{padding:12px;border:none;border-radius:10px;font-weight:700;cursor:pointer}
-  .full{width:100%}
-  .primary{background:#2d6cdf;color:#fff} .danger{background:#e74c3c;color:#fff}
-  .ghost{background:#32485a;color:#fff} .success{background:#27ae60;color:#111}
-  .muted{color:var(--muted);font-size:13px;margin-top:8px}
-  .split{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+  .full{width:100%} .primary{background:#2d6cdf;color:#fff} .ghost{background:#22384b;color:#fff} .danger{background:var(--danger);color:#fff} .success{background:var(--ok);color:#111}
+  .muted{color:var(--muted);font-size:13px}
   .row{display:flex;gap:8px;flex-wrap:wrap}
+  .split{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
 
-  /* Splash */
-  #splash{
-    position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
-    background:#1e2a33; color:#fff; font-weight:900; letter-spacing:2px;
-    font-size:clamp(28px,8vw,48px); z-index:9999;
-  }
-
-  /* Players list */
+  /* players */
   .players{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
-  .chip{background:#16232c;border-radius:999px;padding:6px 10px;font-size:13px;display:flex;align-items:center;gap:8px}
-  .chip.me{outline:2px solid var(--ok)}
-  .chip.dead{opacity:.45;text-decoration:line-through}
-  .order{background:#101820;border-radius:6px;padding:2px 6px;font-size:11px;opacity:.9}
-  .dot{width:10px;height:10px;border-radius:50%}
-  .dot.ready{background:var(--ok)} .dot.wait{background:var(--warn)}
+  .chip{background:var(--chip);border-radius:999px;padding:6px 10px;font-size:13px;display:flex;gap:8px;align-items:center}
+  .chip.me{outline:2px solid var(--ok)} .chip.dead{opacity:.45;text-decoration:line-through}
+  .dot{width:10px;height:10px;border-radius:50%;background:#f1c40f} .dot.ready{background:var(--ok)}
 
-  /* Tags */
-  .tag{display:inline-block;padding:6px 10px;border-radius:999px;background:#16232c;font-size:12px}
-  .tag.started{background:var(--info)}
-  .tag.turn{background:#ffb703;color:#111;font-weight:800}
-  .tag.you{background:#27ae60;color:#111;font-weight:800}
-
-  /* Grid 1–31 */
+  /* grid */
   .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:12px}
   .card{
-    position:relative;aspect-ratio:2/2.6;background:var(--card);color:var(--danger);
-    border:3px solid var(--border);border-radius:14px;display:flex;align-items:center;justify-content:center;
-    font-size:clamp(22px,6vw,36px);font-weight:800;user-select:none;cursor:pointer;transition:.12s transform,.12s filter;
-    box-shadow:0 10px 24px rgba(0,0,0,.25)
+    position:relative; aspect-ratio:2/2.6; border-radius:14px; background:var(--card); color:#c8d4de;
+    border:3px solid var(--ok); display:flex; align-items:center; justify-content:center;
+    font-size:clamp(22px,6vw,34px); font-weight:800; user-select:none; cursor:pointer; transition:.12s transform,.12s filter;
   }
-  .card:active{transform:scale(.97)}
-  .card.taken{background:#fff4f4;color:#fff;border-color:var(--danger)}
-  .card.taken::after{content:"SEÇİLDİ"; position:absolute; right:6px; bottom:6px; background:var(--danger); color:#fff;
-    font-size:10px; font-weight:800; padding:3px 6px; border-radius:6px}
-  .card.me{outline:3px solid var(--ok)}
-  .card.disabled{opacity:.45; cursor:not-allowed}
+  .card:active{transform:scale(.97)} .card.disabled{opacity:.45; cursor:not-allowed}
+  .card.taken{border-color:var(--danger); color:#fff; background:#3b1616}
+  .badge{position:absolute;top:6px;right:6px;background:#ff4757;color:#fff;font-size:10px;font-weight:800;padding:3px 6px;border-radius:6px;display:none}
+  .card.me .badge{display:block} /* kendi gizli sayısı etiketi */
 
-  /* Countdown bubble */
-  .countdown{font-weight:900;font-size:18px;padding:6px 10px;border-radius:10px;background:#101820;margin-left:8px}
+  /* banners/modals */
+  .banner{position:fixed;left:50%;top:14px;transform:translateX(-50%);background:#e74c3c;color:#fff;font-weight:800;padding:10px 14px;border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.25);display:none;z-index:20}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;padding:16px;z-index:30}
+  .box{width:100%;max-width:420px;background:var(--panel);border-radius:14px;padding:16px}
 
-  /* Banners & debug */
-  .end-banner{
-    position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
-    background: #e74c3c; color:#fff; font-weight:800; font-size:16px;
-    padding:10px 14px; border-radius:12px; box-shadow:0 10px 28px rgba(0,0,0,.25);
-    z-index: 9998; opacity:0; pointer-events:none; transition: opacity .25s ease, transform .25s ease;
-  }
-  .end-banner.show{ display:block !important; opacity:1; transform: translateX(-50%) translateY(0); }
-  .debug{margin-top:10px;background:#101820;border-radius:10px;padding:8px;font-size:12px;line-height:1.35}
+  /* splash */
+  #splash{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0b1218;color:#fff;font-weight:900;letter-spacing:2px;font-size:clamp(28px,8vw,48px);z-index:40}
 </style>
 </head>
 <body>
-  <!-- Splash -->
   <div id="splash">BAL YEM 31</div>
 
   <div class="wrap">
-    <!-- Login -->
-    <section id="login" class="panel" style="display:none">
-      <h1>31 Oyununa Hoş Geldin</h1>
-      <input id="nameInput" placeholder="Kullanıcı adını yaz (ör: İbrahim)"/>
-      <button id="joinBtn" class="primary full">GİR</button>
-      <div class="muted">WhatsApp linkine <code>?room=oda-whatsapp</code> ekle; tıklayan herkes aynı odaya düşer. Oda limiti: 10.</div>
+    <!-- MENU -->
+    <section id="menu" class="panel" style="display:none">
+      <h1>Odaya giriş</h1>
+      <input id="nameInput" placeholder="Kullanıcı adın"/>
+      <div class="row">
+        <button id="createBtn" class="success">Oda Aç</button>
+        <button id="joinBtn"   class="primary">Odaya Katıl</button>
+      </div>
+      <div class="muted" style="margin-top:8px">Önce bir kişi <b>Oda Aç</b> desin (oda-1, oda-2...). Sonra herkes <b>Odaya Katıl</b> ile aynı odaya girsin.</div>
     </section>
 
-    <!-- Game -->
+    <!-- GAME -->
     <section id="game" class="panel" style="display:none">
       <div class="split">
         <h1 id="roomTitle">Oda: -</h1>
-        <div>
-          <span id="stateTag" class="tag">Bekleme</span>
-          <span id="turnTag" class="tag" style="display:none"></span>
-          <span id="aliveTag" class="tag">Canlı: 0</span>
-          <span id="countdownBubble" class="countdown" style="display:none">1</span>
+        <div class="row">
+          <button id="startBtn" class="danger" style="display:none">BAŞLAT</button>
+          <button id="leaveBtn" class="ghost">Odadan Çık</button>
         </div>
       </div>
 
       <div class="players" id="players"></div>
 
-      <div id="grid" class="grid"></div>
-
-      <div class="row" style="margin-top:12px">
-        <button id="readyBtn" class="success">Hazırım</button>
-        <button id="unreadyBtn" class="ghost" style="display:none">Hazır Değilim</button>
-        <button id="cheatBtn" class="ghost" title="Şifre gir">Şifre</button>
-        <button id="leaveBtn" class="danger">Odadan Çık</button>
+      <div id="secretBox" class="box" style="display:none">
+        <h3 style="margin:0 0 8px">Gizli sayını seç (1–31)</h3>
+        <div id="secretGrid" class="grid"></div>
+        <div class="row" style="margin-top:8px">
+          <button id="readyBtn" class="success" disabled>Hazırım</button>
+        </div>
+        <div class="muted">Hazır'a basınca bu ekran sende kapanır. Kendi gizli sayını kartlarda kırmızı etiket olarak görürsün.</div>
       </div>
 
-      <div id="cheatBox" style="display:none; margin-top:8px; padding:8px; background:#16232c; border-radius:8px; font-size:14px"></div>
-      <div id="debugBox" class="debug" style="display:none"></div>
-
-      <div class="muted" style="margin-top:8px">
-        Akış: İsim → <b>Gizli sayı</b> → <b>Hazırım</b> → Başlar → Sıra ile → Süre dolarsa otomatik seçim → Elenme → Son kalan için mesaj → Otomatik yeni tur.
-      </div>
+      <div id="grid" class="grid" style="display:none"></div>
     </section>
   </div>
 
-  <!-- End banner -->
-  <div id="endBanner" class="end-banner" style="display:none"></div>
+  <div id="banner" class="banner"></div>
 
-  <!-- Secret modal -->
-  <div id="secretModal" class="modal" aria-hidden="true" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.4);backdrop-filter: blur(2px);padding:16px;z-index:9997">
-    <div class="box" style="width:100%;max-width:420px;background:#223240;border-radius:14px;padding:16px;box-shadow:0 10px 28px rgba(0,0,0,.35)">
-      <h3 style="margin:0 0 10px">Gizli sayını seç (1–31)</h3>
-      <div id="secretGrid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:10px 0"></div>
-      <button id="saveSecretBtn" class="primary full" disabled>Kaydet</button>
-      <div class="muted">Sadece sen ve sistem görür. Biri bu sayıya basarsa <b>elenirsin</b>.</div>
-    </div>
-  </div>
-
-  <!-- Firebase + App -->
+  <!-- Firebase (compat) + game -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
-  <script src="./game.js?v=11"></script>
+  <script src="./game.js?v=12"></script>
+  <script>
+    // splash 1.5 sn
+    setTimeout(()=>{ document.getElementById('splash').style.display='none'; document.getElementById('menu').style.display='block'; }, 1500);
+  </script>
 </body>
 </html>
