@@ -60,26 +60,18 @@
   .card.me{outline:3px solid var(--ok)}
   .card.disabled{opacity:.45; cursor:not-allowed}
 
-  /* Countdown bubble (sadece sıra süresi) */
+  /* Countdown bubble */
   .countdown{font-weight:900;font-size:18px;padding:6px 10px;border-radius:10px;background:#101820;margin-left:8px}
 
-  /* Flash + End banner */
-  .flash,.end-banner{
-    position: fixed; left: 50%; transform: translateX(-50%);
-    background: #2d6cdf; color:#fff; font-weight:800; font-size:16px;
+  /* Banners & debug */
+  .end-banner{
+    position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+    background: #e74c3c; color:#fff; font-weight:800; font-size:16px;
     padding:10px 14px; border-radius:12px; box-shadow:0 10px 28px rgba(0,0,0,.25);
     z-index: 9998; opacity:0; pointer-events:none; transition: opacity .25s ease, transform .25s ease;
   }
-  .flash{ top: 12px; }
-  .end-banner{ top: 56px; background:#e74c3c }
-  .show{ opacity:1; transform: translateX(-50%) translateY(0); }
-
-  /* Modal (secret) */
-  .modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.4);backdrop-filter: blur(2px);padding:16px;z-index:9997}
-  .modal .box{width:100%;max-width:420px;background:var(--panel);border-radius:14px;padding:16px;box-shadow:0 10px 28px rgba(0,0,0,.35)}
-  .secret-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:10px 0}
-  .secret-grid button{padding:10px;border:none;border-radius:10px;font-weight:800;background:#fff;color:#e74c3c;border:2px solid #e74c3c;cursor:pointer}
-  .secret-grid button.sel{background:#27ae60;color:#111;border-color:#27ae60}
+  .end-banner.show{ display:block !important; opacity:1; transform: translateX(-50%) translateY(0); }
+  .debug{margin-top:10px;background:#101820;border-radius:10px;padding:8px;font-size:12px;line-height:1.35}
 </style>
 </head>
 <body>
@@ -117,7 +109,9 @@
         <button id="cheatBtn" class="ghost" title="Şifre gir">Şifre</button>
         <button id="leaveBtn" class="danger">Odadan Çık</button>
       </div>
+
       <div id="cheatBox" style="display:none; margin-top:8px; padding:8px; background:#16232c; border-radius:8px; font-size:14px"></div>
+      <div id="debugBox" class="debug" style="display:none"></div>
 
       <div class="muted" style="margin-top:8px">
         Akış: İsim → <b>Gizli sayı</b> → <b>Hazırım</b> → Başlar → Sıra ile → Süre dolarsa otomatik seçim → Elenme → Son kalan için mesaj → Otomatik yeni tur.
@@ -125,14 +119,14 @@
     </section>
   </div>
 
-  <div id="flash" class="flash">-</div>
-  <div id="endBanner" class="end-banner">-</div>
+  <!-- End banner -->
+  <div id="endBanner" class="end-banner" style="display:none"></div>
 
   <!-- Secret modal -->
-  <div id="secretModal" class="modal" aria-hidden="true">
-    <div class="box">
+  <div id="secretModal" class="modal" aria-hidden="true" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.4);backdrop-filter: blur(2px);padding:16px;z-index:9997">
+    <div class="box" style="width:100%;max-width:420px;background:#223240;border-radius:14px;padding:16px;box-shadow:0 10px 28px rgba(0,0,0,.35)">
       <h3 style="margin:0 0 10px">Gizli sayını seç (1–31)</h3>
-      <div id="secretGrid" class="secret-grid"></div>
+      <div id="secretGrid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:10px 0"></div>
       <button id="saveSecretBtn" class="primary full" disabled>Kaydet</button>
       <div class="muted">Sadece sen ve sistem görür. Biri bu sayıya basarsa <b>elenirsin</b>.</div>
     </div>
@@ -141,7 +135,6 @@
   <!-- Firebase + App -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
-  <!-- v10 cache-bust -->
-  <script src="./game.js?v=10"></script>
+  <script src="./game.js?v=11"></script>
 </body>
 </html>
