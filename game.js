@@ -1,4 +1,6 @@
-/* ====== Firebase init ====== */
+/* ===== Basit, Safari/Chrome uyumlu oyun iskeleti ===== */
+
+// Firebase config — seninkiler
 const firebaseConfig = {
   apiKey: "AIzaSyAVGICVQBgLtK7TAHs52jtTr_dXQYFcP0I",
   authDomain: "oyunu-82e8f.firebaseapp.com",
@@ -11,362 +13,327 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-/* ====== Helpers ====== */
-const log = (msg) => {
-  const box = document.getElementById('debugBox');
-  box.style.display = 'block';
-  box.innerHTML = (box.innerHTML ? box.innerHTML + "<br>" : "") + msg;
-  console.log("[DEBUG]", msg);
-};
-let serverOffset = 0;
-db.ref(".info/serverTimeOffset").on("value", s => serverOffset = s.val() || 0);
-const now = () => Date.now() + serverOffset;
+/* --- Kısa yardımcılar --- */
+function $(id){ return document.getElementById(id); }
+function show(el, v){ el.style.display = v ? "" : "none"; }
+function banner(msg, ms=1600){ const b=$('banner'); b.textContent=msg; show(b,true); setTimeout(()=>show(b,false), ms); }
 
-/* ====== DOM ====== */
-const params = new URLSearchParams(location.search);
-const roomId = params.get("room") || "oda-whatsapp";
+/* --- DOM --- */
+const menu = $('menu'), game = $('game');
+const nameInput = $('nameInput'), createBtn = $('createBtn'), joinBtn = $('joinBtn');
+const roomTitle = $('roomTitle'), playersEl = $('players');
+const secretBox = $('secretBox'), secretGrid = $('secretGrid'), readyBtn = $('readyBtn');
+const gridEl = $('grid'), startBtn = $('startBtn'), leaveBtn = $('leaveBtn');
 
-const splash = document.getElementById('splash');
-const login  = document.getElementById('login');
-const game   = document.getElementById('game');
-const nameInput = document.getElementById("nameInput");
-const joinBtn   = document.getElementById("joinBtn");
-const roomTitle = document.getElementById("roomTitle");
-const stateTag  = document.getElementById("stateTag");
-const turnTag   = document.getElementById("turnTag");
-const aliveTag  = document.getElementById("aliveTag");
-const countdownBubble = document.getElementById("countdownBubble");
-const playersEl = document.getElementById("players");
-const gridEl    = document.getElementById("grid");
-const readyBtn  = document.getElementById("readyBtn");
-const unreadyBtn= document.getElementById("unreadyBtn");
-const cheatBtn  = document.getElementById("cheatBtn");
-const cheatBox  = document.getElementById("cheatBox");
-const endBanner = document.getElementById("endBanner");
-const leaveBtn  = document.getElementById("leaveBtn");
-const secretModal = document.getElementById("secretModal");
-const secretGrid  = document.getElementById("secretGrid");
-const saveSecretBtn = document.getElementById("saveSecretBtn");
-
-/* ====== Local ====== */
+/* --- Local durum --- */
 const playerId = "p_" + Math.random().toString(36).slice(2,10);
-let playerName = null, started=false, myTurn=false, myAlive=true, mySecret=null;
-const BASE_SEC = 10, EXTRA_PER_ELIM = 5;
-let availableNums = [];
-let deadlineAt = 0;
+let playerName = null;
+let roomId = null;
+let isOwner = false;
+let mySecret = null;
+let myAlive = true;
+let myTurn = false;
+const cards = new Map();     // ana grid numara -> button
+const sCards = new Map();    // secret grid numara -> button
 
-/* ====== Splash → login ====== */
-window.addEventListener("DOMContentLoaded", ()=> {
-  setTimeout(()=>{ splash.style.display="none"; login.style.display="block"; }, 1500);
-});
+/* === LOBBY === */
 
-/* ====== Grid 1–31 ====== */
-const cards = new Map();
-for (let i=1;i<=31;i++){
-  const b=document.createElement("button");
-  b.className="card disabled"; b.textContent=i; b.dataset.num=i; b.disabled=true;
-  b.onclick=()=>onPick(i);
-  gridEl.appendChild(b); cards.set(i,b);
+/** Sıradaki oda adını üret (oda-1, oda-2, ...) ve current oda yap */
+async function createRoomId(){
+  const nextRef = db.ref("lobby/next");
+  let next = (await nextRef.get()).val();
+  if(!next) next = 1;
+  roomId = "oda-" + next;
+  await db.ref("lobby").update({ current: roomId, next: next + 1 });
 }
-/* Secret chooser */
-let tempSecret=null;
-for (let i=1;i<=31;i++){
-  const btn=document.createElement('button'); btn.textContent=i;
-  btn.style.cssText="padding:10px;border:none;border-radius:10px;font-weight:800;background:#fff;color:#e74c3c;border:2px solid #e74c3c;cursor:pointer";
-  btn.onclick=()=>{ tempSecret=i; [...secretGrid.children].forEach(b=>b.classList.remove('sel')); btn.classList.add('sel'); btn.style.borderColor='#27ae60'; btn.style.background='#27ae60'; btn.style.color='#111'; saveSecretBtn.disabled=false; };
-  secretGrid.appendChild(btn);
+
+/** Var olan current odayı getir */
+async function getCurrentRoomId(){
+  roomId = (await db.ref("lobby/current").get()).val();
+  return roomId;
 }
-function openSecret(){ secretModal.style.display='flex'; }
-function closeSecret(){ secretModal.style.display='none'; }
-saveSecretBtn.onclick=async ()=>{
-  if (!tempSecret) return;
-  mySecret=tempSecret;
+
+/** Odaya oyuncu olarak yaz ve dinlemeleri başlat */
+async function joinRoomCommon(){
+  // oyuncu yaz
+  const pRef = db.ref(`rooms/${roomId}/players/${playerId}`);
+  const info = { name: playerName, ready: false, alive: true, joinedAt: firebase.database.ServerValue.TIMESTAMP };
+  await pRef.set(info);
+  pRef.onDisconnect().remove();
+
+  // owner mı?
+  const ownerId = (await db.ref(`rooms/${roomId}/ownerId`).get()).val();
+  isOwner = (ownerId === playerId);
+
+  // UI
+  roomTitle.textContent = "Oda: " + roomId;
+  show(menu,false); show(game,true);
+  show(secretBox,true); show(gridEl,false);
+  readyBtn.disabled = true; mySecret = null;
+
+  // Secret grid kur
+  secretGrid.innerHTML=''; sCards.clear();
+  for(let i=1;i<=31;i++){
+    const b=document.createElement('button');
+    b.className='card';
+    b.textContent=i;
+    b.onclick=()=>{
+      mySecret=i; readyBtn.disabled=false;
+      sCards.forEach(btn=>btn.style.outline='none'); b.style.outline='3px solid #e74c3c';
+    };
+    secretGrid.appendChild(b); sCards.set(i,b);
+  }
+
+  // Ana grid (sadece bir kez kurarız)
+  if(cards.size===0){
+    for(let i=1;i<=31;i++){
+      const btn=document.createElement('button');
+      btn.className='card disabled';
+      btn.innerHTML = String(i) + '<span class="badge">Gizlin</span>';
+      btn.dataset.num=i;
+      btn.onclick=()=>onPick(Number(i));
+      gridEl.appendChild(btn);
+      cards.set(i,btn);
+    }
+  }
+
+  // Dinlemeler
+  subscribePlayers();
+  subscribeNumbers();
+  subscribeState();
+
+  // Owner butonu görünürlüğü ilk duruma
+  show(startBtn, false);
+}
+
+/* --- Butonlar --- */
+createBtn.onclick = async ()=>{
+  playerName = (nameInput.value||"").trim();
+  if(!playerName){ banner("Adını yaz"); return; }
+
+  await createRoomId();
+  // oda düğümleri
+  await db.ref(`rooms/${roomId}`).set({
+    ownerId: playerId,
+    state: { started: false, finished: false },
+  });
+  isOwner = true;
+  await joinRoomCommon();
+  banner("Oda açıldı");
+};
+
+joinBtn.onclick = async ()=>{
+  playerName = (nameInput.value||"").trim();
+  if(!playerName){ banner("Adını yaz"); return; }
+  const r = await getCurrentRoomId();
+  if(!r){ banner("Önce biri Oda Açsın"); return; }
+
+  // Başlamış odaya yeni giriş olmasın
+  const st = (await db.ref(`rooms/${r}/state`).get()).val()||{};
+  if(st.started){ banner("Oyun başladı, yeni katılım kapalı"); return; }
+
+  await joinRoomCommon();
+  banner("Odaya katıldın");
+};
+
+leaveBtn.onclick = async ()=>{
+  if(roomId){
+    await db.ref(`rooms/${roomId}/players/${playerId}`).remove();
+  }
+  location.replace(location.pathname);
+};
+
+/* --- Hazırım (gizli sayı seçildikten sonra) --- */
+readyBtn.onclick = async ()=>{
+  if(mySecret==null){ banner("Önce gizli sayını seç"); return; }
   await db.ref(`rooms/${roomId}/secrets/${playerId}`).set(mySecret);
-  await db.ref(`rooms/${roomId}/players/${playerId}/ready`).set(false);
-  closeSecret();
-  alert("Gizli sayı kaydedildi. Hazır'a basabilirsin.");
+  await db.ref(`rooms/${roomId}/players/${playerId}/ready`).set(true);
+  // gizli seçim ekranı sadece sende kapanır
+  show(secretBox,false);
+  banner("Hazır!");
+  // kendi gizli kartını ana gridde işaretle (oyun başlayınca görünecek)
+  const meCard = cards.get(mySecret);
+  if(meCard){ meCard.classList.add('me'); }
 };
 
-/* ====== Join / Leave ====== */
-joinBtn.onclick=async ()=>{
-  try{
-    playerName=(nameInput.value||"").trim();
-    if(!playerName){ alert("Adını yaz!"); return; }
-    const pSnap=await db.ref(`rooms/${roomId}/players`).get();
-    const pCount=Object.keys(pSnap.val()||{}).length;
-    if (pCount>=10){ alert("Oda dolu (10/10)."); return; }
+/* --- Owner oyunu başlatır --- */
+startBtn.onclick = async ()=>{
+  // herkes hazır mı?
+  const pS = await db.ref(`rooms/${roomId}/players`).get();
+  const sS = await db.ref(`rooms/${roomId}/secrets`).get();
+  const players = pS.val()||{}, secrets=sS.val()||{};
+  const ids = Object.keys(players);
+  if(ids.length<2){ banner("En az 2 kişi lazım"); return; }
+  const allReady = ids.every(id=>players[id].ready===true);
+  const allSecret = ids.every(id=>secrets[id]!=null);
+  if(!allReady || !allSecret){ banner("Herkes hazır değil"); return; }
 
-    const pRef=db.ref(`rooms/${roomId}/players/${playerId}`);
-    await pRef.set({name:playerName,ready:false,alive:true,joinedAt:firebase.database.ServerValue.TIMESTAMP});
-    pRef.onDisconnect().remove();
-    db.ref(`rooms/${roomId}/presence/${playerId}`).set(true);
-    db.ref(`rooms/${roomId}/presence/${playerId}`).onDisconnect().remove();
+  // sıra: joinedAt'a göre
+  const order = Object.entries(players)
+    .sort((a,b)=>(a[1].joinedAt||0) - (b[1].joinedAt||0))
+    .map(([pid])=>pid);
 
-    login.style.display='none'; game.style.display='block'; roomTitle.textContent="Oda: "+roomId;
+  const first = order[0], firstName = players[first]?.name||"";
+  await db.ref(`rooms/${roomId}/numbers`).set(null); // sıfırla
+  await db.ref(`rooms/${roomId}/state`).set({
+    started: true, finished: false,
+    turn: { order, idx: 0, currentPid: first, currentName: firstName }
+  });
 
-    subscribePlayers(); subscribeNumbers(); subscribeState();
-    openSecret();
-  }catch(e){ log("join error: "+e.message); alert("Bağlantı hatası");}
+  banner("Oyun başladı!");
 };
-leaveBtn.onclick=async ()=>{ await db.ref(`rooms/${roomId}/players/${playerId}`).remove(); location.href=location.pathname; };
 
-/* ====== Players ====== */
+/* === DİNLEMELER === */
 function subscribePlayers(){
   db.ref(`rooms/${roomId}/players`).on('value', snap=>{
     playersEl.innerHTML=''; const data=snap.val()||{};
-    const list=Object.entries(data).sort((a,b)=>(a[1].joinedAt||0)-(b[1].joinedAt||0));
-    let aliveCount=0;
-    list.forEach(([pid,info],idx)=>{
-      const chip=document.createElement('div');
-      chip.className='chip'+(pid===playerId?' me':'')+(info.alive===false?' dead':'');
-      const ord=document.createElement('span'); ord.className='order'; ord.textContent=idx+1;
-      const dot=document.createElement('span'); dot.className='dot '+(info.ready?'ready':'wait');
-      const txt=document.createElement('span'); txt.textContent=info.name||'Oyuncu';
-      chip.appendChild(ord); chip.appendChild(dot); chip.appendChild(txt); playersEl.appendChild(chip);
-      if (info.alive!==false) aliveCount++; if (pid===playerId) myAlive=(info.alive!==false);
+    const list = Object.entries(data).sort((a,b)=>(a[1].joinedAt||0)-(b[1].joinedAt||0));
+    list.forEach(([pid,info],i)=>{
+      const div=document.createElement('div');
+      div.className='chip'+(pid===playerId?' me':'')+(info.alive===false?' dead':'');
+      const dot=document.createElement('span'); dot.className='dot ' + (info.ready?'ready':'');
+      div.appendChild(dot);
+      const t=document.createElement('span'); t.textContent=(i+1)+' • '+(info.name||'Oyuncu');
+      div.appendChild(t);
+      playersEl.appendChild(div);
+      if(pid===playerId){ myAlive = (info.alive!==false); }
     });
-    aliveTag.textContent='Canlı: '+aliveCount;
+
+    // Owner ise ve oyun başlamadı ise başlat butonunu göster
+    db.ref(`rooms/${roomId}/state`).get().then(s=>{
+      const st=s.val()||{}; show(startBtn, isOwner && !st.started && !st.finished);
+    });
   });
 }
 
-/* ====== Numbers ====== */
 function subscribeNumbers(){
-  db.ref(`rooms/${roomId}/numbers`).on("value", snap=>{
-    const data=snap.val()||{}; const taken=new Set(Object.keys(data).map(Number));
-    availableNums=[];
-    for (let i=1;i<=31;i++){
-      const btn=cards.get(i); btn.className="card"; btn.disabled=!myTurn || taken.has(i);
-      if (!taken.has(i)) availableNums.push(i);
-    }
-    Object.entries(data).forEach(([n,info])=>{
-      const btn=cards.get(Number(n));
-      if (btn){ btn.classList.add('taken'); btn.disabled=true; if (info.pickerId===playerId) btn.classList.add('me'); }
+  db.ref(`rooms/${roomId}/numbers`).on('value', snap=>{
+    const data = snap.val()||{};
+    // tüm kartları sıfırla
+    cards.forEach((btn, n)=>{
+      btn.classList.remove('taken','disabled');
+      btn.disabled = true; // oyun başlamamış olabilir, state listener açacak
+      // kendi gizli sayına etiket göster (oyun sırasında kendi sayını seçmeni engelle)
+      const badge = btn.querySelector('.badge');
+      if(Number(n)===Number(mySecret)) { btn.classList.add('me'); if(badge) badge.style.display='block'; }
+      else if(badge) badge.style.display='none';
+    });
+    // alınmış olanları kırmızı yap
+    Object.keys(data).forEach(k=>{
+      const n = Number(k); const btn = cards.get(n);
+      if(btn){ btn.classList.add('taken'); btn.disabled = true; }
     });
   });
 }
 
-/* ====== Ready / Unready ====== */
-readyBtn.onclick=async ()=>{
-  if (mySecret==null){ openSecret(); alert('Önce gizli sayını seç.'); return; }
-  await db.ref(`rooms/${roomId}/players/${playerId}/ready`).set(true);
-  readyBtn.style.display='none'; unreadyBtn.style.display='inline-block';
-};
-unreadyBtn.onclick=async ()=>{
-  await db.ref(`rooms/${roomId}/players/${playerId}/ready`).set(false);
-  readyBtn.style.display='inline-block'; unreadyBtn.style.display='none';
-};
-
-/* ====== Şifre 200 ====== */
-cheatBtn.onclick=async ()=>{
-  const pass=prompt("Şifreyi gir:");
-  if (pass==="200"){
-    const [pS,sS]=await Promise.all([
-      db.ref(`rooms/${roomId}/players`).get(),
-      db.ref(`rooms/${roomId}/secrets`).get()
-    ]);
-    const players=pS.val()||{}, secrets=sS.val()||{};
-    cheatBox.innerHTML="<b>Gizli Sayılar:</b><br>";
-    Object.entries(players).forEach(([pid,info])=>{
-      const num=secrets[pid]; if(num!=null) cheatBox.innerHTML+=`${info.name}: ${num}<br>`;
-    });
-    cheatBox.style.display="block";
-  } else alert("Yanlış şifre!");
-};
-
-/* ====== State & start logic ====== */
 function subscribeState(){
   db.ref(`rooms/${roomId}/state`).on('value', snap=>{
-    const st=snap.val()||{};
-    started=!!st.started;
-
-    // bitti
-    if (st.finished){
-      const name = st.loserName || '—';
-      endBanner.textContent = `Kesene bereket cenabet, ${name}!`;
-      endBanner.classList.add('show'); endBanner.style.display='block';
-      stateTag.textContent='Bitti';
-      setTimeout(()=>{ endBanner.classList.remove('show'); prepareNextRound(); }, 3000);
-      for (let i=1;i<=31;i++){ const btn=cards.get(i); btn.disabled=true; btn.classList.add('disabled'); }
-      countdownBubble.style.display='none';
+    const st = snap.val()||{};
+    if(st.finished){
+      banner("Oyun bitti!");
+      // herkesi odadan at
+      setTimeout(async ()=>{
+        await db.ref(`rooms/${roomId}/players/${playerId}`).remove();
+        location.replace(location.pathname);
+      }, 1200);
       return;
     }
 
-    // başlamadı: otomatik başlatmayı dener
-    if (!st.started){
-      stateTag.textContent='Bekleme'; turnTag.style.display='none'; countdownBubble.style.display='none';
-      for (let i=1;i<=31;i++){ const btn=cards.get(i); btn.disabled=true; btn.classList.add('disabled'); }
-      attemptStart();  // <<<< herkes hazırsın diye kontrol eder
+    const started = !!st.started;
+    show(gridEl, started); // grid sadece oyunda görünür
+    show(startBtn, isOwner && !started);
+
+    if(!started){
+      // gizli sayı ekranı sadece hazır olmayan oyuncuda açık kalsın
+      db.ref(`rooms/${roomId}/players/${playerId}/ready`).get().then(s=>{
+        const r=!!s.val(); show(secretBox, !r);
+      });
+      // tüm kartlar pasif
+      cards.forEach(btn=>{ btn.classList.add('disabled'); btn.disabled=true; });
       return;
     }
 
-    // başladı
-    stateTag.textContent='Başladı'; stateTag.classList.add('started');
-    const order=st.turn?.order||[], idx=st.turn?.idx||0, currentId=order[idx], currentName=st.turn?.currentName||'—';
-    myTurn=(currentId===playerId);
-    turnTag.style.display='inline-block';
-    turnTag.textContent=myTurn?'Sıra Sende':`Sıradaki: ${currentName}`;
-    turnTag.classList.toggle('you',myTurn); turnTag.classList.toggle('turn',!myTurn);
-
-    for (let i=1;i<=31;i++){
-      const btn=cards.get(i);
-      const taken = btn.classList.contains('taken');
-      btn.disabled=!myTurn || taken; btn.classList.toggle('disabled',btn.disabled);
-    }
-
-    deadlineAt=Number(st.turn?.deadlineAt||0);
-    if (deadlineAt){
-      const remain=Math.max(0, deadlineAt - now());
-      countdownBubble.style.display='inline-block';
-      countdownBubble.textContent=String(Math.ceil(remain/1000));
-    }else{
-      countdownBubble.style.display='none';
-    }
+    // Oyun başladı: sıra kontrolü
+    const turn = st.turn || {};
+    myTurn = (turn.currentPid === playerId) && myAlive;
+    // tıklanabilirlik
+    cards.forEach((btn,n)=>{
+      const isTaken = btn.classList.contains('taken');
+      const isMySecret = (Number(n)===Number(mySecret));
+      const can = myTurn && !isTaken && !isMySecret;
+      btn.disabled = !can;
+      btn.classList.toggle('disabled', !can);
+    });
+    roomTitle.textContent = "Oda: " + roomId + (myTurn ? " • Sıra Sende" : " • Sırada: " + (turn.currentName||"-"));
   });
-
-  // canlı sayaç
-  db.ref(`rooms/${roomId}/presence`).on('value', s=>{
-    const v=s.val()||{}; aliveTag.textContent="Canlı: "+Object.keys(v).length;
-  });
-
-  // yerel sayaç güncelle
-  setInterval(()=>{
-    if (!started || !deadlineAt) return;
-    const remain=deadlineAt - now(), sec=Math.ceil(Math.max(0,remain)/1000);
-    countdownBubble.style.display='inline-block'; countdownBubble.textContent=String(sec);
-    if (remain<=0 && myTurn) autoPick();
-  }, 300);
 }
 
-/* Herkes hazır + gizli sayı varsa anında başlat */
-async function attemptStart(){
-  try{
-    const [pS, sS, stS] = await Promise.all([
-      db.ref(`rooms/${roomId}/players`).get(),
-      db.ref(`rooms/${roomId}/secrets`).get(),
-      db.ref(`rooms/${roomId}/state`).get()
-    ]);
-    const st=stS.val()||{}, players=pS.val()||{}, secrets=sS.val()||{};
-    if (st.started || st.finished) return;
+/* === OYUN LOJİĞİ === */
+async function onPick(n){
+  // güvenlik: sıra sende mi?
+  const st = (await db.ref(`rooms/${roomId}/state`).get()).val()||{};
+  const turn = st.turn||{};
+  if(turn.currentPid !== playerId) return;
 
-    const ids = Object.keys(players);
-    if (ids.length < 2) return;
-    const allReady = ids.every(id => players[id].ready===true);
-    const allSecret= ids.every(id => !!secrets[id]);
-    if (!(allReady && allSecret)) return;
+  // atomik: sayı ekle, elenenleri işaretle, sırayı devret / bitir
+  const roomRef = db.ref(`rooms/${roomId}`);
+  let committed = false;
+  await roomRef.transaction(room=>{
+    if(!room || !room.state || !room.state.started || room.state.finished) return room;
+    const state = room.state; const turn = state.turn||{};
+    if(turn.currentPid !== playerId) return room;
 
-    // Transaction ile başlat
-    await db.ref(`rooms/${roomId}`).transaction(room=>{
-      if (!room) room = {};
-      room.players = room.players || {};
-      room.secrets = room.secrets || {};
-      room.state   = room.state   || {};
+    // sayı daha alınmış mı?
+    if(!room.numbers) room.numbers = {};
+    if(room.numbers[n]) return room;
 
-      if (room.state.started || room.state.finished) return room;
+    // sayıyı yaz
+    if(!room.players) room.players = {};
+    const pickerName = room.players[playerId]?.name || '';
+    room.numbers[n] = { pickerId: playerId, pickerName: pickerName, at: {".sv":"timestamp"} };
 
-      const ordered = Object.entries(room.players)
-        .filter(([_,p])=>p && p.alive!==false)
-        .sort((a,b)=>(a[1].joinedAt||0)-(b[1].joinedAt||0))
-        .map(([pid])=>pid);
-
-      if (ordered.length < 2) return room;
-
-      const firstId = ordered[0];
-      room.state.started = true;
-      room.state.finished = false;
-      room.state.elimCount = room.state.elimCount || 0;
-      room.state.turn = { order: ordered, idx: 0, currentName: room.players[firstId]?.name || '' };
-      room.state.phase = null;
-      return room;
+    // gizli sayılara bakan ve elenenleri pasifleştiren blok
+    const secrets = room.secrets || {};
+    Object.keys(secrets).forEach(pid=>{
+      if(Number(secrets[pid])===Number(n) && room.players[pid] && room.players[pid].alive!==false){
+        room.players[pid].alive = false; // izleme moduna döner
+      }
     });
 
-    // başlatıldıysa deadline yaz
-    const s2=(await db.ref(`rooms/${roomId}/state`).get()).val()||{};
-    if (s2.started && s2.turn && !s2.finished){
-      const deadline = now() + (BASE_SEC + (s2.elimCount||0)*EXTRA_PER_ELIM)*1000;
-      await db.ref(`rooms/${roomId}/state/turn/deadlineAt`).set(deadline);
-    }
-  }catch(e){ log("attemptStart: "+e.message); }
-}
+    // yaşayanlar
+    const order = (turn.order||[]).filter(pid => room.players[pid]);
+    const aliveOrder = order.filter(pid => room.players[pid].alive!==false);
 
-/* ====== Seçim ====== */
-async function onPick(n){
-  if (!myTurn || !started) return;
-  let committed=false;
-  await db.ref(`rooms/${roomId}`).transaction(room=>{
-    if(!room||!room.state||!room.state.started||room.state.finished) return room;
-    const turn=room.state.turn||{}; const order=turn.order||[]; const idx=turn.idx||0; const currentPid=order[idx];
-    if(currentPid!==playerId) return room;
-
-    if(!room.numbers) room.numbers={}; if(room.numbers[n]) return room;
-    if(!room.players) room.players={}; const pickerName=room.players[playerId]?.name||'';
-    room.numbers[n]={pickerId:playerId,pickerName,at:{".sv":"timestamp"}};
-
-    const secrets=room.secrets||{};
-    const victims=Object.keys(secrets).filter(pid=>Number(secrets[pid])===Number(n) && room.players[pid] && room.players[pid].alive!==false);
-    victims.forEach(pid=>{ room.players[pid].alive=false; });
-    room.state.elimCount=(room.state.elimCount||0)+victims.length;
-
-    const fullOrder=order.filter(pid=>room.players[pid]);
-    const aliveOrder=fullOrder.filter(pid=>room.players[pid].alive!==false);
-
-    if (aliveOrder.length===1){
-      const loserId=aliveOrder[0];
-      room.state.started=false; room.state.finished=true;
-      room.state.finishedAt={".sv":"timestamp"}; room.state.loserId=loserId; room.state.loserName=room.players[loserId]?.name||''; room.state.phase='finished';
+    // bitiş: tek kişi kaldıysa
+    if(aliveOrder.length<=1){
+      state.finished = true;
+      state.started = false;
       return room;
     }
 
-    const currIdxAlive=aliveOrder.indexOf(currentPid); const nextPid=aliveOrder[(currIdxAlive+1)%aliveOrder.length];
-    const newIdx=fullOrder.indexOf(nextPid); room.state.turn.idx=(newIdx>=0?newIdx:0);
-    room.state.turn.currentName=room.players[nextPid]?.name||'';
-    room.state.turn.deadlineAt={".sv":"timestamp"}; // sonra dışarıdan gerçek deadline set edeceğiz
+    // sıradaki canlı oyuncuya geçir
+    const currAliveIdx = aliveOrder.indexOf(turn.currentPid);
+    const nextPid = aliveOrder[(currAliveIdx+1) % aliveOrder.length];
+    state.turn = {
+      order: order,
+      idx: order.indexOf(nextPid),
+      currentPid: nextPid,
+      currentName: room.players[nextPid]?.name || ''
+    };
     return room;
-  }, (e,ok)=>{ committed=ok; });
+  }, (e, ok)=>{ committed = ok; });
 
-  if (committed){
-    const s2=(await db.ref(`rooms/${roomId}/state`).get()).val()||{};
-    if (!s2.finished && s2.started){
-      const deadline = now() + (BASE_SEC + (s2.elimCount||0)*EXTRA_PER_ELIM)*1000;
-      await db.ref(`rooms/${roomId}/state/turn/deadlineAt`).set(deadline);
+  if(committed){
+    // seçilen sayı herkesde kırmızı oldu; sıradaki oyuncuya geçti
+    // kendi gizli sayısı denk geldiyse client tarafında sadece banner gösteririz
+    const sec = (await db.ref(`rooms/${roomId}/secrets`).get()).val()||{};
+    for(const pid in sec){
+      if(Number(sec[pid])===Number(n)){
+        const p = (await db.ref(`rooms/${roomId}/players/${pid}`).get()).val()||{};
+        if(p && pid!==playerId){
+          banner(`${p.name}: hadi götünü kurtardın!`, 1400);
+        }
+      }
     }
   }
-}
-
-function autoPick(){
-  const free=availableNums.slice(); if(!free.length) return;
-  const n=free[Math.floor(Math.random()*free.length)];
-  onPick(n);
-}
-
-/* ====== Yeni tur ====== */
-async function prepareNextRound(){
-  try{
-    const stateRef=db.ref(`rooms/${roomId}/state`);
-    let committed=false;
-    await stateRef.transaction(st=>{ if(!st||!st.finished||st.nextRoundPrepared) return st; st.nextRoundPrepared=true; st.phase='choosing'; return st; },(e,ok)=>{committed=ok;});
-    if(!committed) return;
-
-    const updates={};
-    updates[`rooms/${roomId}/numbers`]=null;
-    updates[`rooms/${roomId}/secrets`]=null;
-    updates[`rooms/${roomId}/state/started`]=false;
-    updates[`rooms/${roomId}/state/finished`]=false;
-    updates[`rooms/${roomId}/state/turn`]=null;
-    updates[`rooms/${roomId}/state/finishedAt`]=null;
-    updates[`rooms/${roomId}/state/loserId`]=null;
-    updates[`rooms/${roomId}/state/loserName`]=null;
-
-    const pSnap=await db.ref(`rooms/${roomId}/players`).get();
-    const players=pSnap.val()||{};
-    Object.keys(players).forEach(pid=>{
-      updates[`rooms/${roomId}/players/${pid}/alive`]=true;
-      updates[`rooms/${roomId}/players/${pid}/ready`]=false;
-    });
-
-    await db.ref().update(updates);
-    // gizli sayı seçim ekranı
-    if (mySecret==null) openSecret();
-    readyBtn.style.display='inline-block'; unreadyBtn.style.display='none';
-    stateTag.textContent='Yeni Tur: Gizli sayı seçin';
-  }catch(e){ log("prepareNextRound: "+e.message); }
 }
