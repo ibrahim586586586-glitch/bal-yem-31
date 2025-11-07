@@ -1,0 +1,46 @@
+body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    margin: 0;
+    background-color: #1a1a1a;
+    color: white;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    overflow: hidden; /* Sayfanın kaydırılmasını engelle */
+}
+
+#info-bar {
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+#game-title {
+    margin: 0;
+    font-size: 1.5em;
+}
+
+#room-id {
+    font-size: 0.9em;
+    color: #aaa;
+}
+
+#copy-link-btn {
+    padding: 8px 15px;
+    font-size: 0.8em;
+    cursor: pointer;
+    border: none;
+    border-radius: 5px;
+    background-color: #007bff;
+    color: white;
+    margin-top: 5px;
+}
+
+#gameCanvas {
+    background-color: #f0f0f0;
+    border: 3px solid #fff;
+    border-radius: 10px;
+    max-width: 100%;
+    max-height: 80vh; /* Canvas'ın ekran yüksekliğine göre ayarlanması */
+}
